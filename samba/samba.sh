@@ -18,5 +18,14 @@ cp -v /root/cdpni/samba/etc/resolv.conf /etc/
  mv /etc/samba/smb.conf smb.conf.old
  samba-tool domain provision --use-rfc2307 --interactive
 cp -v /root/cdpni/samba/samba/smb.conf /etc/samba/
-cp -v /root/cdpni/samba/etc/fstab /etc/
+#cp -v /root/cdpni/samba/etc/fstab /etc/
 cp -v /root/cdpni/samba/etc/krb5.conf /etc/
+systemctl stop smbd nmbd winbind
+systemctl disable smbd nmbd winbind
+systemctl unmask samba-ad-dc
+systemctl start samba-ad-dc
+systemctl enable samba-ad-dc
+	#samba-tool user list - so p validar
+ 	#kinit Administrator
+  	#klist
+
