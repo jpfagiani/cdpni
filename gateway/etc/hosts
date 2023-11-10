@@ -1,0 +1,8 @@
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+
+10.14.29.1	gateway.cdpni.sap		gateway
+10.14.29.10	intranet.cdpni.sap		intranet
+10.14.29.11	storage.cdpni.sap		storage
+10.14.29.12	ad.cdpni.sap			ad
+10.14.29.15	interno.cdpni.sap		interno
