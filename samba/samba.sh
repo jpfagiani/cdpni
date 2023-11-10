@@ -18,7 +18,7 @@ cp -v /root/cdpni/samba/etc/resolv.conf /etc/
 #cp -v /root/cdpni/samba/samba/smb.conf /etc/samba/
 #cp -v /root/cdpni/samba/etc/fstab /etc/
 #cp -v /root/cdpni/samba/etc/krb5.conf /etc/
-init 6
+
 
 
 
