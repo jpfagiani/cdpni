@@ -1,6 +1,5 @@
 #!/bin/bash
 
-apt update
 hostnamectl set-hostname intranet.cdpni.sap
 apt install openssh-server bind9 bind9utils dnsutils -y
 cp -v /root/cdpni/intranet/network/interfaces /etc/network/
