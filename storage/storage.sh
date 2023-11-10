@@ -12,7 +12,7 @@ cp -v /root/cdpni/storage/etc/issue.net  /etc/
 cp -v /root/cdpni/storage/etc/motd  /etc/
 cp -v /root/cdpni/storage/etc/resolv.conf /etc/
 	chattr +i /etc/resolv.conf
-apt install mdadm -y
+apt install openssh-server mdadm -y
 #cp -v /root/cdpni/storage/ssh/sshd_config /etc/ssh/
 	#systemctl restart sshd
 mdadm --create /dev/md0 --level=5 --raid-devices=4 /dev/sdb /dev/sdc /dev/sdd /dev/sde
