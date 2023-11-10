@@ -17,15 +17,6 @@ cp -v /root/cdpni/samba/etc/resolv.conf /etc/
 	chattr +i /etc/resolv.conf
  mv /etc/samba/smb.conf smb.conf.old
  samba-tool domain provision --use-rfc2307 --interactive
- 
-#cp -v /root/cdpni/samba/samba/smb.conf /etc/samba/
-#cp -v /root/cdpni/samba/etc/fstab /etc/
-#cp -v /root/cdpni/samba/etc/krb5.conf /etc/
-
-
-
-
-
-
-
-
+cp -v /root/cdpni/samba/samba/smb.conf /etc/samba/
+cp -v /root/cdpni/samba/etc/fstab /etc/
+cp -v /root/cdpni/samba/etc/krb5.conf /etc/
