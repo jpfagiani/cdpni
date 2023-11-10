@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 apt update
 hostnamectl set-hostname storage.cdpni.sap
