@@ -1,0 +1,28 @@
+#/bin/bash
+
+apt update
+hostnamectl set-hostname storage.cdpni.sap
+cp -v /root/cdpni/storage/network/interfaces /etc/network/
+cp -v /root/cdpni/storage/etc/hostname  /etc/
+cp -v /root/cdpni/storage/etc/hosts  /etc/
+cp -v /root/cdpni/storage/etc/hosts.allow  /etc/
+cp -v /root/cdpni/storage/etc/hosts.deny  /etc/
+cp -v /root/cdpni/storage/etc/issue  /etc/
+cp -v /root/cdpni/storage/etc/issue.net  /etc/
+cp -v /root/cdpni/storage/etc/motd  /etc/
+cp -v /root/cdpni/storage/etc/resolv.conf /etc/
+	chattr +i /etc/resolv.conf
+apt install mdadm -y
+#cp -v /root/cdpni/storage/ssh/sshd_config /etc/ssh/
+	#systemctl restart sshd
+mdadm --create /dev/md0 --level=5 --raid-devices=4 /dev/sdb /dev/sdc /dev/sdd /dev/sde
+mkfs -t ext4 /dev/md0
+tune2fs -L samba /dev/md0
+mkdir -pv /srv/cdpni/samba/
+echo -e "LABEL=samba \t\t /srv/cdpni/samba/ \t\t ext4  defaults 0 0"  >> /etc/fstab
+mount -a
+for i in homes drivers lixeiras administrativo aevp almoxarifado canil cimic cpd dcsd educacao financas inclusao infraestrutura publico saude scanner sindicancia supervisao wallpaper
+chefia_turno_I chefia_turno_II chefia_turno_III chefia_turno_IV conexao_familiar diretoria_geral diretoria_de_centro nucleo_de_pessoal portaria_turno_I portaria_turno_II
+portaria_turno_III portaria_turno_IV rol_de_visitas; do mkdir -pv /srv/cdpni/samba/$i; done
+chmod a+w /srv/cdpni/samba/*
+init 6

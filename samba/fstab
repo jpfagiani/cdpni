@@ -1,0 +1,18 @@
+
+/dev/mapper/debian--vg-root			/               ext4  errors=remount-ro 0       1
+UUID=17bdfea5-1a8c-4b89-bb87-1d3b990d7c52 	/boot           ext2    defaults        0       2
+/dev/mapper/debian--vg-tmp 			/tmp            ext4    defaults        0       2
+/dev/mapper/debian--vg-var 			/var            ext4    defaults        0       2
+/dev/mapper/debian--vg-swap_1 			none            swap    sw              0       0
+/dev/sr0	/media/cdrom0   		udf,iso9660 user,noauto     		0       0
+
+10.148.29.3:/srv/cdpni/samba/homes			/home 								nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/public			/srv/cdpni/samba/public 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/profiles		/srv/cdpni/samba/profiles 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/owner			/srv/cdpni/samba/owner 				nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/lixeiras		/srv/cdpni/samba/lixeiras 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/drivers		/srv/cdpni/samba/drivers 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/security		/srv/cdpni/samba/security 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/manager 		/srv/cdpni/samba/manager 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/marketing 		/srv/cdpni/samba/marketing 			nfs defaults,soft 0 0
+10.148.29.3:/srv/cdpni/samba/infrastructure	/srv/cdpni/samba/infrastructure 	nfs defaults,soft 0 0
