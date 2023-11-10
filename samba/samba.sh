@@ -1,6 +1,5 @@
 #!/bin/bash
 
-apt update 
 hostnamectl set-hostname ad.cdpni.sap
 apt install openssh-server nfs-client samba krb5-config winbind krb5-user smbclient -y
 cp -v /root/cdpni/samba/etc/network/interfaces /etc/network
