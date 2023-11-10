@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 hostnamectl set-hostname gateway.cdpni.sap
 cp -v /root/cdpni/gateway/network-scripts/*  /etc/sysconfig/network-scripts/
