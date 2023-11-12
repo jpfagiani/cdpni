@@ -11,7 +11,7 @@ cp -v /root/cdpni/gateway/etc/resolv.conf /etc/
 	chattr +i /etc/resolv.conf
 systemctl disable firewalld
 systemctl stop firewalld
-yum install iptables-services openssh openssh-server -y
+yum install iptables-services vim openssh openssh-server -y
 systemctl enable iptables
 cp -v /root/cdpni/gateway/ssh/sshd_config   /etc/ssh/
 	systemctl restart sshd
