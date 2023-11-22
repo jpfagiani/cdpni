@@ -2,26 +2,19 @@
 
 # Rede interna
 GTW=10.14.29.1
-INT=10.14.29.10
-STG=10.14.29.11
-AD=10.14.29.12
-CLI=10.14.29.15
+INT=10.14.29.2
+STG=10.14.29.4
+AD=10.14.29.3
+#CLI=10.14.29.15
 LAN=10.14.29.0/24
 
 # Link Dedicado (FAKE INTERNET)
 FWL1=200.50.100.10
-FWL2=200.50.100.20
-EXT=200.50.100.100
 LNK=200.50.100.0/24
 
 # Internet
 DIP=10.0.2.15
 WAN=10.0.2.0/24
-
-# VPN
-CVP=10.0.0.100
-SVP=10.0.0.200
-VPN=10.0.0.0/24
 
 # Habilita o passagem de pacotes
 echo 1 > /proc/sys/net/ipv4/ip_forward
@@ -57,7 +50,7 @@ iptables -A INPUT -p icmp --icmp-type echo-request -i enp0s9 -j ACCEPT
 
 # 4 - Habilita o SSH do node Cliente Interno e Externo
 iptables -A INPUT -p tcp --dport 52001 -j ACCEPT
-iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+#iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
 # 5 - Habilita o INPUT do NTP para clientes Internos e Externo
 #iptables -A INPUT -p udp -i enp0s8 -s $LAN -d $GTW --dport 123 -j ACCEPT
@@ -179,9 +172,9 @@ iptables -t nat -A POSTROUTING -s $LAN -o enp0s3 -j MASQUERADE
 #iptables -t nat -A PREROUTING -p tcp -i enp0s9 -s $LNK -d $FWL2 --dport 389 -j DNAT --to-destination $DTC:389
 
 # 7 - Habilita acesso via SSH pelo host fisico
-iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52010 -j DNAT --to-destination $INT:52010
-iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52011 -j DNAT --to-destination $STG:52011
-iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52012 -j DNAT --to-destination $AD:52012
+iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52002 -j DNAT --to-destination $INT:52002
+iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52004 -j DNAT --to-destination $STG:52004
+iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52003 -j DNAT --to-destination $AD:52003
 iptables -t nat -A PREROUTING -p tcp -i enp0s9 -d $FWL1 --dport 52015 -j DNAT --to-destination $INT:52015
 
 if [ $? == 0 ] ; then 
