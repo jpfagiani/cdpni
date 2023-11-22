@@ -1,6 +1,6 @@
 #!/bin/bash
 
-hostnamectl set-hostname gateway.cdpni.sap
+hostnamectl set-hostname gateway.sap.gov
 cp -v /root/cdpni/gateway/network-scripts/*  /etc/sysconfig/network-scripts/
 #cp -v /root/cdpni/gateway/etc/hostname  /etc/
 cp -v /root/cdpni/gateway/etc/hosts  /etc/
