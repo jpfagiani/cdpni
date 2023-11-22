@@ -1,15 +1,15 @@
 $TTL 7200 ; default para registros sem TTL
 ;
-@	IN	SOA	ns1.cdpni.sap.	analista.cdpni.sap. (
-	2023102518 ; serial
+@	IN	SOA	ns1.sap.gov.	analista.sap.gov. (
+	2023110900 ; serial
 	8h ; refresh
 	1h ; retry
 	3d ; expire
 	3h ; negative caching TTL
 );
 ;
-@	IN	NS	ns1.cdpni.sap.
+@	IN	NS	ns1.sap.gov.
 @	IN	A	200.50.100.10
 ns1	IN	A	200.50.100.10
-10	IN	PTR	www.cdpni.sap.
-10	IN	PTR	mail.cdpni.sap.
+10	IN	PTR	www.sap.gov.
+10	IN	PTR	mail.sap.gov.
