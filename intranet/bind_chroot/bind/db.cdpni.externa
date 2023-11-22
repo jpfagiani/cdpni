@@ -1,6 +1,6 @@
 $TTL 7200 ; default para registros sem TTL
 ;
-@	IN	SOA	ns1.sap.gov.	analista.sap.gov. (
+@	IN	SOA	ns1.cdpni.sap.	analista.cdpni.sap. (
 	2023110900 ; serial
 	8h ; refresh
 	1h ; retry
@@ -8,8 +8,8 @@ $TTL 7200 ; default para registros sem TTL
 	3h ; negative caching TTL
 );
 ;
-@		IN	NS	ns1.sap.gov.
-@		IN	MX	10 mail.sap.gov.
+@		IN	NS	ns1.cdpni.sap.
+@		IN	MX	10 mail.cdpni.sap.
 @		IN	A	200.50.100.10
 @		IN	TXT	"v=spf1 a mx ip4:200.50.100.10 -all"
 ns1		IN	A	200.50.100.10
@@ -17,6 +17,6 @@ www		IN	A	200.50.100.10
 ftp		IN	CNAME	www
 mail	IN	A	200.50.100.10
 smtp	IN	CNAME	mail
-pop		IN	CNAME	mail
+pop	IN	CNAME	mail
 imap	IN	CNAME	mail
 webmail	IN	CNAME	mail
