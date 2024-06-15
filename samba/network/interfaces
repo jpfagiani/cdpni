@@ -1,0 +1,12 @@
+source /etc/network/interfaces.d/*
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# Interface interna de rede
+auto enp0s3
+iface enp0s3 inet static
+	address		10.14.29.12
+	netmask		255.255.255.0
+	gateway		10.14.29.1

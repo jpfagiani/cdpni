@@ -1,0 +1,17 @@
+$TTL 7200 ; default para registros sem TTL
+;
+@	IN	SOA	ns1.cdpni.sap.	analista.cdpni.sap. (
+	2024061513 ; serial
+	8h ; refresh
+	1h ; retry
+	3d ; expire
+	3h ; negative caching TTL
+);
+;
+@	IN	NS	ns1.cdpni.sap.
+@	IN	A	172.14.29.12
+ns1	IN	A	172.14.29.10
+10	IN	PTR	gateway.cdpni.sap.
+11	IN	PTR	storage.cdpni.sap.
+12	IN	PTR	ad.cdpni.sap.
+13	IN	PTR	interno.cdpni.sap.

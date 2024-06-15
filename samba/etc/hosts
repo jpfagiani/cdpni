@@ -1,0 +1,15 @@
+127.0.0.1	localhost
+127.0.1.1	localhost.localdomain
+
+::1     localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+
+10.14.29.1	gateway.cdpni.sap		gateway
+10.14.29.10	intranet.cdpni.sap	    intranet
+10.14.29.11	storage.cdpni.sap		storage
+10.14.29.12	ad.cdpni.sap	    	ad
+
+
+
+

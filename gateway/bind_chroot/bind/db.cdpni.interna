@@ -1,0 +1,26 @@
+$TTL 7200 ; default para registros sem TTL
+;
+@	IN	SOA	ns1.cdpni.sap.	analista.cdpni.sap. (
+	2024061513 ; serial
+	8h ; refresh
+	1h ; retry
+	3d ; expire
+	3h ; negative caching TTL
+);
+;
+@				IN	NS		ns1.cdpni.sap.
+@				IN	MX		172 mail.cdpni.sap.
+@				IN	A		172.14.29.12
+ns1				IN	A		172.14.29.10
+www				IN	A		172.14.29.11
+ftp				IN	CNAME		www
+mail			IN	A		172.14.29.10
+smtp			IN	CNAME		mail
+pop				IN	CNAME		mail
+imap			IN	CNAME		mail
+webmail			IN	CNAME		mail
+gateway			IN	A		172.14.29.10
+storage			IN	A		172.14.29.11
+ad				IN	A		172.14.29.12
+express			IN	A		172.14.29.10
+ldap			IN  A       172.14.29.10
