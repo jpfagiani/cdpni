@@ -5,8 +5,8 @@ auto lo
 iface lo inet loopback
 
 # Interface interna de rede
-auto enp0s3
-iface enp0s3 inet static
-	address		10.14.29.11
+auto enp0s8
+iface enp0s8 inet static
+	address		172.14.29.11
 	netmask		255.255.255.0
-	gateway		10.14.29.1
+	gateway		172.14.29.1
