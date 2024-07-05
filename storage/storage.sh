@@ -1,15 +1,8 @@
 #!/bin/bash
 
-hostnamectl set-hostname storage.cdpni.sap
+hostnamectl set-hostname storage.cdpni.gov
 cp -v /root/cdpni/storage/network/interfaces /etc/network/
-cp -v /root/cdpni/storage/etc/hostname  /etc/
-cp -v /root/cdpni/storage/etc/hosts  /etc/
-cp -v /root/cdpni/storage/etc/hosts.allow  /etc/
-cp -v /root/cdpni/storage/etc/hosts.deny  /etc/
-cp -v /root/cdpni/storage/etc/issue  /etc/
-cp -v /root/cdpni/storage/etc/issue.net  /etc/
-cp -v /root/cdpni/storage/etc/motd  /etc/
-cp -v /root/cdpni/storage/etc/resolv.conf /etc/
+cp -v /root/cdpni/storage/etc/*  /etc/
 	chattr +i /etc/resolv.conf
 apt install openssh-server mdadm -y
 cp -v /root/cdpni/storage/ssh/sshd_config /etc/ssh/
