@@ -1,48 +1,52 @@
 ---
-- name: Instalar UFW e Fail2ban
+# ── nftables ──────────────────────────────────────────────────────────────────
+- name: Instalar nftables e Fail2ban
   ansible.builtin.apt:
-    name: [ufw, fail2ban]
+    name: [nftables, fail2ban, smartmontools]
     state: present
 
-# ── Firewall ──────────────────────────────────────────────────────────────────
-- name: Resetar UFW
-  community.general.ufw:
-    state: reset
+- name: Desabilitar UFW se instalado (evitar conflito)
+  ansible.builtin.service:
+    name: ufw
+    state: stopped
+    enabled: false
+  ignore_errors: true
 
-- name: Política padrão — bloquear entrada, permitir saída
-  community.general.ufw:
-    direction: "{{ item.dir }}"
-    policy: "{{ item.pol }}"
+- name: Remover regras iptables legadas
+  ansible.builtin.command: "{{ item }}"
   loop:
-    - { dir: incoming, pol: deny  }
-    - { dir: outgoing, pol: allow }
+    - iptables -F
+    - iptables -X
+    - iptables -P INPUT ACCEPT
+    - iptables -P FORWARD ACCEPT
+    - iptables -P OUTPUT ACCEPT
+  ignore_errors: true
+  changed_when: false
 
-- name: Regras de firewall
-  community.general.ufw:
-    rule: allow
-    port: "{{ item.port }}"
-    proto: "{{ item.proto }}"
-    comment: "{{ item.comment }}"
-  loop:
-    - { port: "22",   proto: tcp, comment: SSH }
-    - { port: "137",  proto: udp, comment: "Samba NetBIOS Name" }
-    - { port: "138",  proto: udp, comment: "Samba NetBIOS Datagram" }
-    - { port: "139",  proto: tcp, comment: "Samba NetBIOS Session" }
-    - { port: "445",  proto: tcp, comment: "Samba SMB" }
-    - { port: "80",   proto: tcp, comment: "HTTP redirect" }
-    - { port: "443",  proto: tcp, comment: "Portal HTTPS" }
-    - { port: "8443", proto: tcp, comment: "Painel Admin" }
+- name: Implantar ruleset nftables
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    mode: "0640"
+  notify: reload nftables
 
-- name: Permitir rede LAN completa
-  community.general.ufw:
-    rule: allow
-    src: "{{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}"
-
-- name: Habilitar UFW
-  community.general.ufw:
-    state: enabled
+- name: Habilitar e iniciar nftables
+  ansible.builtin.service:
+    name: nftables
+    state: started
+    enabled: true
 
 # ── Fail2ban ──────────────────────────────────────────────────────────────────
+- name: Configurar Fail2ban para usar nftables como banaction
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/jail.d/defaults-nftables.conf
+    content: |
+      [DEFAULT]
+      banaction     = nftables-multiport
+      banaction_allports = nftables-allports
+    mode: "0644"
+  notify: restart fail2ban
+
 - name: Configurar Fail2ban — jail Samba
   ansible.builtin.template:
     src: samba-jail.conf.j2
@@ -114,6 +118,11 @@
     mode: "0600"
 
 handlers:
+  - name: reload nftables
+    ansible.builtin.service:
+      name: nftables
+      state: reloaded
+
   - name: restart fail2ban
     ansible.builtin.service:
       name: fail2ban

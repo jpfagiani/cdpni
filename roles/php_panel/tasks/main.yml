@@ -90,6 +90,32 @@
     state: absent
   notify: reload nginx
 
+- name: Criar diretório de backup
+  ansible.builtin.file:
+    path: /backup/samba
+    state: directory
+    owner: root
+    group: www-data
+    mode: "0770"
+
+- name: Cron backup automático diário (02:00)
+  ansible.builtin.cron:
+    name: cdpni-backup-diario
+    minute: "0"
+    hour: "2"
+    job: >
+      tar -czf /backup/samba/backup_$(date +\%Y-\%m-\%d_\%H-\%M).tar.gz
+      {{ raid.mount }}/shares /etc/samba/smb.conf 2>/dev/null &&
+      find /backup/samba -name 'backup_*.tar.gz' -mtime +7 -delete
+
+- name: Permissão sudoers para www-data executar backup
+  ansible.builtin.lineinfile:
+    path: /etc/sudoers.d/cdpni-panel
+    line: "www-data ALL=(root) NOPASSWD: /bin/tar, /usr/bin/find"
+    regexp: '/bin/tar'
+    state: present
+    validate: visudo -cf %s
+
 - name: Habilitar PHP-FPM e Nginx
   ansible.builtin.service:
     name: "{{ item }}"

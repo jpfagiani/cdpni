@@ -227,6 +227,9 @@ if($action==='status'){
     $disk=run('df -h '.escapeshellarg(SAMBA_ROOT).' 2>/dev/null | tail -1');
     $conns=run('sudo smbstatus -S 2>/dev/null | grep -cv "^\$\|^-\|^Share" 2>/dev/null || echo 0');
     $uptime=run('uptime -p 2>/dev/null');
+    $smart=run('smartctl --scan 2>/dev/null | wc -l');
+    $users_count=run('sudo pdbedit -L 2>/dev/null | wc -l');
+    $shares_count=run('grep -c "^\[" '.escapeshellarg(SMB_CONF).' 2>/dev/null || echo 0');
     $p=preg_split('/\s+/',trim($disk['output']??''));
     json_out([
         'smbd'=>trim($smbd['output']),
@@ -234,9 +237,67 @@ if($action==='status'){
         'disk_used'=>$p[2]??'-',
         'disk_total'=>$p[1]??'-',
         'disk_pct'=>$p[4]??'-',
+        'disk_avail'=>$p[3]??'-',
         'connections'=>max(0,(int)trim($conns['output'])-1),
         'uptime'=>trim($uptime['output']),
-        'raid'=>trim($raid['output'])
+        'raid'=>trim($raid['output']),
+        'users_count'=>(int)trim($users_count['output']),
+        'shares_count'=>max(0,(int)trim($shares_count['output'])-2),
     ]);
 }
+
+if($action==='audit_log'){
+    $limit=(int)($_GET['limit']??100);
+    $filter=trim($_GET['filter']??'');
+    if(!file_exists(LOG_FILE))json_out([]);
+    $lines=array_reverse(file(LOG_FILE,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES));
+    $out=[];
+    foreach($lines as $l){
+        if($filter&&stripos($l,$filter)===false)continue;
+        if(preg_match('/^\[(.+?)\] \[(.+?)\] (.+)$/',$l,$m)){
+            $out[]=['time'=>$m[1],'user'=>$m[2],'action'=>$m[3],'ip'=>$_SERVER['REMOTE_ADDR']??'-'];
+        }
+        if(count($out)>=$limit)break;
+    }
+    json_out($out);
+}
+
+if($action==='audit_export'){
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="auditoria_'.date('Y-m-d').'.csv"');
+    if(file_exists(LOG_FILE)){
+        echo "Data/Hora,Usuario,Acao\n";
+        foreach(file(LOG_FILE,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $l){
+            if(preg_match('/^\[(.+?)\] \[(.+?)\] (.+)$/',$l,$m)){
+                echo '"'.$m[1].'","'.$m[2].'","'.addslashes($m[3]).'"'."\n";
+            }
+        }
+    }
+    exit;
+}
+
+if($action==='backup_list'){
+    $dir=defined('BACKUP_DIR')?BACKUP_DIR:'/backup/samba';
+    $backups=[];
+    if(is_dir($dir)){
+        foreach(glob($dir.'/*.tar.gz')as$f){
+            $backups[]=['file'=>basename($f),'size'=>round(filesize($f)/1048576,1).' MB','date'=>date('Y-m-d H:i',filemtime($f))];
+        }
+        usort($backups,fn($a,$b)=>strcmp($b['date'],$a['date']));
+    }
+    json_out($backups);
+}
+
+if($action==='backup_run'){
+    $targets=[];
+    if($_POST['shares']??'1')$targets[]=SAMBA_ROOT;
+    if($_POST['config']??'1')$targets[]='/etc/samba/smb.conf';
+    $dir=defined('BACKUP_DIR')?BACKUP_DIR:'/backup/samba';
+    $file=$dir.'/backup_'.date('Y-m-d_H-i-s').'.tar.gz';
+    $r=run('sudo mkdir -p '.escapeshellarg($dir).' && sudo tar -czf '.escapeshellarg($file).' '.implode(' ',array_map('escapeshellarg',$targets)).' 2>&1');
+    if($r['code']!==0)json_out(['error'=>'Erro no backup: '.$r['output']],500);
+    log_action("Backup manual criado: ".basename($file));
+    json_out(['ok'=>true,'file'=>basename($file),'message'=>'Backup criado com sucesso']);
+}
+
 json_out(['error'=>'Ação desconhecida'],404);

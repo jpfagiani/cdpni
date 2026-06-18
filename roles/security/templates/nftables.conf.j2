@@ -1,0 +1,51 @@
+#!/usr/sbin/nft -f
+# CDPNI — gerado pelo Ansible
+# Consistente com o gateway nftables da organização
+
+flush ruleset
+
+define LAN_NET = {{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}
+define SSH_PORT = 22
+define SMB_PORTS = { 139, 445 }
+define NB_PORTS  = { 137, 138 }
+define WEB_PORTS = { 80, 443, 8443 }
+
+table inet filter {
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        ct state invalid drop
+        ct state { established, related } accept
+
+        iifname "lo" accept
+
+        # ICMP — diagnóstico interno
+        ip  protocol icmp   accept
+        ip6 nexthdr  icmpv6 accept
+
+        # SSH — restrito à LAN
+        tcp dport $SSH_PORT  ip saddr $LAN_NET accept
+        tcp dport $SSH_PORT  ip saddr != $LAN_NET drop
+
+        # Samba SMB/CIFS (TCP)
+        tcp dport $SMB_PORTS ip saddr $LAN_NET accept
+
+        # Samba NetBIOS (UDP) — opcional, compatibilidade Windows antigas
+        udp dport $NB_PORTS  ip saddr $LAN_NET accept
+
+        # Portal de arquivos e painel admin
+        tcp dport $WEB_PORTS ip saddr $LAN_NET accept
+
+        # Log de drops (limite para não saturar journal)
+        limit rate 5/minute log prefix "nft-drop: " flags all drop
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+    }
+
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}

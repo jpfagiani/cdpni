@@ -93,6 +93,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)
     <div class="nav-item" onclick="goto('groups')"><span>👥</span> Grupos</div>
     <div class="nav-section"><span>Compartilhamentos</span></div>
     <div class="nav-item" onclick="goto('shares')"><span>🗂️</span> Shares</div>
+    <div class="nav-section"><span>Controle</span></div>
+    <div class="nav-item" onclick="goto('audit')"><span>📋</span> Auditoria</div>
+    <div class="nav-item" onclick="goto('backup')"><span>💾</span> Backup</div>
     <div class="sidebar-footer"><button class="logout-btn" onclick="doLogout()">⏻ Sair</button></div>
   </aside>
   <div class="main">
@@ -151,7 +154,9 @@ const pages={
   dashboard:{title:'Dashboard',action:null},
   users:{title:'Usuários',action:{label:'+ Novo Usuário',fn:'openCreateUser'}},
   groups:{title:'Grupos',action:{label:'+ Novo Grupo',fn:'openCreateGroup'}},
-  shares:{title:'Compartilhamentos',action:{label:'+ Novo Share',fn:'openCreateShare'}}
+  shares:{title:'Compartilhamentos',action:{label:'+ Novo Share',fn:'openCreateShare'}},
+  audit:{title:'Auditoria',action:{label:'⬇ Exportar CSV',fn:'exportAudit'}},
+  backup:{title:'Backup',action:null}
 };
 function goto(page){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.getAttribute('onclick')?.includes(`'${page}'`)));
@@ -170,8 +175,10 @@ const renders={
         <div class="status-grid">
           <div class="stat-card"><div class="label">Samba (smbd)</div><div class="value" style="font-size:1rem;margin-top:.4rem"><span class="dot ${ok(s.smbd)?'dot-green':'dot-red'}"></span>${ok(s.smbd)?'Ativo':'Inativo'}</div></div>
           <div class="stat-card"><div class="label">NetBIOS (nmbd)</div><div class="value" style="font-size:1rem;margin-top:.4rem"><span class="dot ${ok(s.nmbd)?'dot-green':'dot-red'}"></span>${ok(s.nmbd)?'Ativo':'Inativo'}</div></div>
-          <div class="stat-card"><div class="label">Espaço Usado</div><div class="value">${esc(s.disk_used||'-')}</div><div class="sub">de ${esc(s.disk_total||'-')} (${esc(s.disk_pct||'-')})</div></div>
-          <div class="stat-card"><div class="label">Conexões</div><div class="value">${esc(s.connections)}</div></div>
+          <div class="stat-card"><div class="label">Espaço usado</div><div class="value">${esc(s.disk_used||'-')}</div><div class="sub">de ${esc(s.disk_total||'-')} — livre: ${esc(s.disk_avail||'-')} (${esc(s.disk_pct||'-')})</div></div>
+          <div class="stat-card"><div class="label">Conexões ativas</div><div class="value">${esc(s.connections)}</div></div>
+          <div class="stat-card"><div class="label">Usuários</div><div class="value">${esc(s.users_count||'-')}</div></div>
+          <div class="stat-card"><div class="label">Compartilhamentos</div><div class="value">${esc(s.shares_count||'-')}</div></div>
           <div class="stat-card" style="grid-column:span 2"><div class="label">Uptime</div><div class="value" style="font-size:.95rem;margin-top:.35rem">${esc(s.uptime||'-')}</div></div>
         </div>
         <div class="card"><div class="card-header"><h4>Status RAID</h4></div>
@@ -216,6 +223,8 @@ const renders={
         </tr>`).join('')}</tbody></table></div>`;
     }catch(e){$('ct').innerHTML=`<div class="empty"><span class="icon">⚠️</span>${esc(e.message)}</div>`;}
   },
+  audit: renders_audit.audit,
+  backup: renders_audit.backup,
   async shares(){
     try{
       const s=await api('list_shares');
@@ -331,6 +340,75 @@ async function openAddMember(group){
       catch(e){toast(e.message,'error');}
     }}]);
 }
+async function exportAudit(){
+  window.location.href='api/?action=audit_export';
+}
+
+const renders_audit={
+  async audit(){
+    const filter=document.getElementById('auditFilter')?.value||'';
+    try{
+      const logs=await api('audit_log',{},'GET');
+      if(!logs.length){$('ct').innerHTML='<div class="empty"><span class="icon">📋</span>Nenhum registro de auditoria</div>';return;}
+      const badge=(a)=>{
+        const m={login:'tag-blue',criar:'tag-green',excluir:'tag-red',bloquear:'tag-red',senha:'tag-blue',share:'tag-green'};
+        for(const[k,v] of Object.entries(m))if(a.toLowerCase().includes(k))return v;
+        return '';
+      };
+      $('ct').innerHTML=`
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input type="text" id="auditFilter" placeholder="Filtrar por usuário ou ação..." style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.8rem;outline:none" onkeyup="renders.audit()">
+        </div>
+        <div class="card"><div class="card-header"><h4>Log de auditoria (${logs.length})</h4></div>
+          <table><thead><tr><th>Data/Hora</th><th>Usuário</th><th>Ação</th></tr></thead>
+          <tbody>${logs.map(x=>`<tr>
+            <td style="font-family:var(--mono);font-size:.75rem;color:var(--muted)">${esc(x.time)}</td>
+            <td style="font-family:var(--mono);font-weight:500">${esc(x.user)}</td>
+            <td><span class="tag ${badge(x.action)}">${esc(x.action)}</span></td>
+          </tr>`).join('')}</tbody></table></div>`;
+    }catch(e){$('ct').innerHTML=`<div class="empty"><span class="icon">⚠️</span>${esc(e.message)}</div>`;}
+  },
+  async backup(){
+    try{
+      const list=await api('backup_list',{},'GET');
+      $('ct').innerHTML=`
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <div class="card"><div class="card-header"><h4>Executar Backup</h4></div>
+            <div style="padding:1rem">
+              <div class="form-group"><label><input type="checkbox" id="bkShares" checked style="width:auto;margin-right:.4rem">Compartilhamentos (${esc(list.length)?'':'0'} arquivos)</label></div>
+              <div class="form-group"><label><input type="checkbox" id="bkConf" checked style="width:auto;margin-right:.4rem">Configuração Samba</label></div>
+              <button class="btn btn-primary btn-sm" onclick="runBackup()" style="width:100%;justify-content:center">💾 Iniciar backup agora</button>
+            </div>
+          </div>
+          <div class="card"><div class="card-header"><h4>Agendamento automático</h4></div>
+            <div style="padding:1rem;font-size:.85rem">
+              <div style="display:flex;justify-content:space-between;margin-bottom:.5rem"><span style="color:var(--muted)">Horário</span><span>Diário 02:00</span></div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:.5rem"><span style="color:var(--muted)">Retenção</span><span>7 dias</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:var(--muted)">Destino</span><span style="font-family:var(--mono);font-size:.78rem">/backup/samba</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="card"><div class="card-header"><h4>Histórico de backups (${list.length})</h4></div>
+          ${list.length?`<table><thead><tr><th>Arquivo</th><th>Data</th><th>Tamanho</th></tr></thead>
+          <tbody>${list.map(x=>`<tr>
+            <td style="font-family:var(--mono);font-size:.78rem">${esc(x.file)}</td>
+            <td style="color:var(--muted);font-size:.8rem">${esc(x.date)}</td>
+            <td style="font-family:var(--mono);font-size:.78rem">${esc(x.size)}</td>
+          </tr>`).join('')}</tbody></table>`:'<p style="padding:1.5rem;text-align:center;color:var(--muted)">Nenhum backup encontrado</p>'}
+        </div>`;
+    }catch(e){$('ct').innerHTML=`<div class="empty"><span class="icon">⚠️</span>${esc(e.message)}</div>`;}
+  }
+};
+async function runBackup(){
+  const shares=document.getElementById('bkShares')?.checked?'1':'0';
+  const config=document.getElementById('bkConf')?.checked?'1':'0';
+  try{
+    const r=await api('backup_run',{shares,config},'POST');
+    toast(r.message||'Backup concluído');
+    renders.backup();
+  }catch(e){toast(e.message,'error');}
+}
+
 async function openCreateShare(){
   const opts=await loadGrps();
   modal('Novo Compartilhamento',`
