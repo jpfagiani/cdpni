@@ -1,0 +1,10 @@
+# Portal CDPNI — gerado pelo Ansible
+SAMBA_ROOT  = '{{ raid.mount }}/shares'
+ADMIN_USERS = ['{{ server.admin_user }}', 'cpd', 'supervisao']
+SERVER_IP   = '{{ server.ip }}'
+DOMAIN      = '{{ server.domain }}'
+SECRET_KEY  = '{{ lookup("password", "/dev/null chars=ascii_letters,digits length=64") }}'
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE   = True
+PERMANENT_SESSION_LIFETIME = 3600
+MAX_CONTENT_LENGTH = 512 * 1024 * 1024

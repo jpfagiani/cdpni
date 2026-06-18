@@ -1,0 +1,168 @@
+---
+# Lista de grupos do Samba
+samba_groups:
+  - grp_administrativo
+  - grp_aevp
+  - grp_almoxarifado
+  - grp_cadastro
+  - grp_canil
+  - grp_chefia_1
+  - grp_chefia_2
+  - grp_chefia_3
+  - grp_chefia_4
+  - grp_cipa
+  - grp_conexao_familiar
+  - grp_cpd
+  - grp_csd
+  - grp_diretoria
+  - grp_educacao
+  - grp_financas
+  - grp_inclusao
+  - grp_infraestrutura
+  - grp_nucleo_pessoal
+  - grp_papel_parede
+  - grp_planilhas
+  - grp_portaria
+  - grp_publico
+  - grp_rol_visitas
+  - grp_saude
+  - grp_scanner
+  - grp_simic
+  - grp_sindicancia
+  - grp_supervisao
+
+# Todos os grupos (para shares abertas)
+samba_all_groups: >-
+  @grp_administrativo @grp_aevp @grp_almoxarifado @grp_cadastro @grp_canil
+  @grp_chefia_1 @grp_chefia_2 @grp_chefia_3 @grp_chefia_4 @grp_cipa
+  @grp_conexao_familiar @grp_cpd @grp_csd @grp_diretoria @grp_educacao
+  @grp_financas @grp_inclusao @grp_infraestrutura @grp_nucleo_pessoal
+  @grp_papel_parede @grp_planilhas @grp_portaria @grp_publico @grp_rol_visitas
+  @grp_saude @grp_scanner @grp_simic @grp_sindicancia @grp_supervisao
+
+# Compartilhamentos
+# valid_users: lista de usuários/grupos com acesso
+# extra_users: usuários individuais extras além do admin
+# browseable: visível na rede
+samba_shares:
+  - { name: Administrativo,    group: grp_administrativo,   browseable: yes }
+  - { name: Aevp,              group: grp_aevp,              browseable: yes }
+  - { name: Almoxarifado,      group: grp_almoxarifado,      browseable: yes }
+  - { name: Canil,             group: grp_canil,             browseable: yes }
+  - { name: Cipa,              group: grp_cipa,              browseable: yes }
+  - { name: Conexao_Familiar,  group: grp_conexao_familiar,  browseable: yes }
+  - { name: Educacao,          group: grp_educacao,          browseable: yes }
+  - { name: Financas,          group: grp_financas,          browseable: yes }
+  - { name: Inclusao,          group: grp_inclusao,          browseable: yes }
+  - { name: Infraestrutura,    group: grp_infraestrutura,    browseable: yes }
+  - { name: Nucleo_de_Pessoal, group: grp_nucleo_pessoal,    browseable: yes }
+  - { name: Planilhas,         group: grp_planilhas,         browseable: yes }
+  - { name: Rol_de_Visitas,    group: grp_rol_visitas,       browseable: yes }
+  - { name: Saude,             group: grp_saude,             browseable: yes }
+  - { name: Sindicancia,       group: grp_sindicancia,       browseable: yes }
+
+  # Chefias — grupo próprio + supervisores + sindicância
+  - name: Chefia_Turno_I
+    group: grp_chefia_1
+    extra_users: [cpd, dg, supervisao, sindicancia]
+    browseable: yes
+  - name: Chefia_Turno_II
+    group: grp_chefia_2
+    extra_users: [cpd, dg, supervisao, sindicancia]
+    browseable: yes
+  - name: Chefia_Turno_III
+    group: grp_chefia_3
+    extra_users: [cpd, dg, supervisao, sindicancia]
+    browseable: yes
+  - name: Chefia_Turno_IV
+    group: grp_chefia_4
+    extra_users: [cpd, dg, supervisao, sindicancia]
+    browseable: yes
+
+  # CSD — restrito
+  - name: csd
+    group: grp_csd
+    extra_users: [supervisao, dg, cpd]
+    browseable: yes
+
+  # Simic/Cadastro — acesso cruzado
+  - name: Simic
+    group: grp_simic
+    extra_groups: [grp_cadastro]
+    extra_users: [supervisao]
+    browseable: yes
+  - name: Cadastro
+    group: grp_cadastro
+    extra_groups: [grp_simic]
+    extra_users: [supervisao]
+    browseable: yes
+
+  # Supervisão — acessa tudo exceto Diretoria (sem entrada aqui)
+  - { name: Supervisao, group: grp_supervisao, browseable: yes }
+
+  # Pastas abertas — todos os grupos
+  - { name: Publico,        group: all, browseable: yes }
+  - { name: Scanner,        group: all, browseable: yes }
+  - { name: Papel_de_Parede, group: all, browseable: yes }
+
+  # CPD — todos os grupos mas oculto
+  - { name: CPD, group: all, browseable: no }
+
+  # Diretoria — restrito, supervisao NÃO tem acesso
+  - name: Diretoria_Geral
+    group: grp_diretoria
+    extra_users: []
+    browseable: yes
+    restrict_to_group_only: true
+
+  # Portarias — grupo compartilhado grp_portaria
+  - { name: Portaria_Turno_I,   group: grp_portaria, extra_users: [supervisao, cpd], browseable: yes }
+  - { name: Portaria_Turno_II,  group: grp_portaria, extra_users: [supervisao, cpd], browseable: yes }
+  - { name: Portaria_Turno_III, group: grp_portaria, extra_users: [supervisao, cpd], browseable: yes }
+  - { name: Portaria_Turno_IV,  group: grp_portaria, extra_users: [supervisao, cpd], browseable: yes }
+
+# Usuários iniciais: login, nome completo, grupo primário, grupos extras
+samba_users:
+  - login: cpd
+    fullname: "CPD - Acesso Total"
+    primary: grp_cpd
+    groups: [grp_administrativo, grp_aevp, grp_almoxarifado, grp_cadastro, grp_canil,
+             grp_chefia_1, grp_chefia_2, grp_chefia_3, grp_chefia_4, grp_cipa,
+             grp_conexao_familiar, grp_cpd, grp_csd, grp_educacao, grp_financas,
+             grp_inclusao, grp_infraestrutura, grp_nucleo_pessoal, grp_papel_parede,
+             grp_planilhas, grp_portaria, grp_publico, grp_rol_visitas, grp_saude,
+             grp_scanner, grp_simic, grp_sindicancia, grp_supervisao]
+  - login: supervisao
+    fullname: "Supervisao"
+    primary: grp_supervisao
+    groups: [grp_administrativo, grp_aevp, grp_almoxarifado, grp_cadastro, grp_canil,
+             grp_chefia_1, grp_chefia_2, grp_chefia_3, grp_chefia_4, grp_cipa,
+             grp_conexao_familiar, grp_cpd, grp_csd, grp_educacao, grp_financas,
+             grp_inclusao, grp_infraestrutura, grp_nucleo_pessoal, grp_papel_parede,
+             grp_planilhas, grp_portaria, grp_publico, grp_rol_visitas, grp_saude,
+             grp_scanner, grp_simic, grp_sindicancia, grp_supervisao]
+  - { login: chefia1,      fullname: "Chefia Turno I",    primary: grp_chefia_1,        groups: [grp_chefia_1] }
+  - { login: chefia2,      fullname: "Chefia Turno II",   primary: grp_chefia_2,        groups: [grp_chefia_2] }
+  - { login: chefia3,      fullname: "Chefia Turno III",  primary: grp_chefia_3,        groups: [grp_chefia_3] }
+  - { login: chefia4,      fullname: "Chefia Turno IV",   primary: grp_chefia_4,        groups: [grp_chefia_4] }
+  - { login: simic,        fullname: "Simic",             primary: grp_simic,           groups: [grp_simic, grp_cadastro] }
+  - { login: cadastro,     fullname: "Cadastro",          primary: grp_cadastro,        groups: [grp_cadastro, grp_simic] }
+  - { login: csd,          fullname: "CSD",               primary: grp_csd,             groups: [grp_csd] }
+  - { login: adm,          fullname: "Administrativo",    primary: grp_administrativo,  groups: [grp_administrativo] }
+  - { login: aevp,         fullname: "AEVP",              primary: grp_aevp,            groups: [grp_aevp] }
+  - { login: almoxarifado, fullname: "Almoxarifado",      primary: grp_almoxarifado,    groups: [grp_almoxarifado] }
+  - { login: canil,        fullname: "Canil",             primary: grp_canil,           groups: [grp_canil] }
+  - { login: cipa,         fullname: "CIPA",              primary: grp_cipa,            groups: [grp_cipa] }
+  - { login: conexao,      fullname: "Conexao Familiar",  primary: grp_conexao_familiar, groups: [grp_conexao_familiar] }
+  - { login: dg,           fullname: "Diretoria Geral",   primary: grp_diretoria,       groups: [grp_diretoria] }
+  - { login: educacao,     fullname: "Educacao",          primary: grp_educacao,        groups: [grp_educacao] }
+  - { login: financas,     fullname: "Financas",          primary: grp_financas,        groups: [grp_financas] }
+  - { login: inclusao,     fullname: "Inclusao",          primary: grp_inclusao,        groups: [grp_inclusao] }
+  - { login: infra,        fullname: "Infraestrutura",    primary: grp_infraestrutura,  groups: [grp_infraestrutura] }
+  - { login: npessoal,     fullname: "Nucleo de Pessoal", primary: grp_nucleo_pessoal,  groups: [grp_nucleo_pessoal] }
+  - { login: portaria,     fullname: "Portaria",          primary: grp_portaria,        groups: [grp_portaria] }
+  - { login: rol,          fullname: "Rol de Visitas",    primary: grp_rol_visitas,     groups: [grp_rol_visitas] }
+  - { login: saude,        fullname: "Saude",             primary: grp_saude,           groups: [grp_saude] }
+  - { login: scanner,      fullname: "Scanner",           primary: grp_scanner,         groups: [grp_scanner] }
+  - { login: sindicancia,  fullname: "Sindicancia",       primary: grp_sindicancia,     groups: [grp_sindicancia] }
+  - { login: publico,      fullname: "Publico",           primary: grp_publico,         groups: [grp_publico] }

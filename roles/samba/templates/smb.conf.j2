@@ -1,0 +1,93 @@
+# smb.conf — {{ server.hostname }} — gerado pelo Ansible em {{ ansible_date_time.date }}
+# NÃO edite manualmente; use o Ansible para mudanças permanentes.
+
+[global]
+    workgroup            = {{ samba.workgroup }}
+    server string        = {{ server.hostname }} File Server
+    netbios name         = {{ server.hostname | upper }}
+    server role          = standalone server
+    security             = user
+    passdb backend       = tdbsam
+    map to guest         = never
+
+    interfaces           = lo {{ server.iface }}
+    bind interfaces only = yes
+    hosts allow          = 127.0.0.1 {{ server.ip | regex_replace('\.[0-9]+$', '.') }}
+    hosts deny           = ALL
+
+    min protocol         = SMB2
+    max protocol         = SMB3
+    use sendfile         = yes
+    aio read size        = 16384
+    aio write size       = 16384
+    read raw             = yes
+    write raw            = yes
+    max xmit             = 65535
+    dead time            = 15
+
+    log file             = {{ samba.log_dir }}/log.%m
+    max log size         = 51200
+    log level            = 1 auth:2
+
+    create mask          = 0664
+    directory mask       = 0777
+    force create mode    = 0664
+    force directory mode = 0777
+
+    load printers        = no
+    printing             = bsd
+    printcap name        = /dev/null
+    disable spoolss      = yes
+
+    unix charset         = UTF-8
+    dos charset          = CP850
+
+    # Lixeira global
+    vfs objects          = recycle full_audit
+    recycle:repository   = {{ raid.mount }}/recycle/%U
+    recycle:keeptree     = yes
+    recycle:versions     = yes
+    recycle:touch        = yes
+    recycle:maxsize      = 1073741824
+    recycle:exclude      = *.tmp *.temp ~$* .DS_Store Thumbs.db desktop.ini
+
+    # Auditoria de acesso
+    full_audit:prefix    = %u|%I|%S
+    full_audit:success   = open read write
+    full_audit:failure   = connect
+    full_audit:facility  = local5
+    full_audit:priority  = notice
+
+[Recycle]
+    comment     = Lixeira
+    path        = {{ raid.mount }}/recycle
+    valid users = {{ server.admin_user }}
+    writable    = no
+    browseable  = no
+
+{% for share in samba_shares %}
+{% set share_path = raid.mount + '/shares/' + share.name %}
+{% if share.group == 'all' %}
+{#  Pastas abertas a todos os grupos #}
+{% set valid = samba_all_groups %}
+{% elif share.restrict_to_group_only is defined and share.restrict_to_group_only %}
+{#  Restrito ao grupo + admin (sem supervisao) #}
+{% set valid = '@' + share.group + ' ' + server.admin_user %}
+{% else %}
+{#  Regra padrão: grupo + extras + supervisao + admin #}
+{% set extra_g = share.extra_groups | default([]) | map('regex_replace', '^', '@') | join(' ') %}
+{% set extra_u = share.extra_users  | default([]) | join(' ') %}
+{% set valid = ('@' + share.group + ' ' + extra_g + ' ' + extra_u + ' supervisao ' + server.admin_user) | regex_replace('\s+', ' ') | trim %}
+{% endif %}
+[{{ share.name }}]
+    comment         = {{ share.name | replace('_', ' ') }}
+    path            = {{ share_path }}
+    valid users     = {{ valid }}
+    writable        = yes
+    browseable      = {{ share.browseable | default('yes') }}
+    create mask     = 0664
+    directory mask  = 0777
+    force create mode    = 0664
+    force directory mode = 0777
+
+{% endfor %}

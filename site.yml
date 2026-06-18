@@ -1,0 +1,64 @@
+---
+- name: CDPNI — Servidor de Arquivos Samba
+  hosts: cdpni
+  become: true
+
+  pre_tasks:
+    - name: Verificar se está rodando como root
+      ansible.builtin.assert:
+        that: ansible_user_id == "root"
+        fail_msg: "Execute o playbook como root (sudo)"
+
+    - name: Verificar Debian/Ubuntu
+      ansible.builtin.assert:
+        that: ansible_os_family == "Debian"
+        fail_msg: "Suportado apenas em Debian/Ubuntu"
+
+    - name: Exibir configuração que será aplicada
+      ansible.builtin.debug:
+        msg:
+          - "Servidor : {{ server.hostname }}.{{ server.domain }}"
+          - "IP       : {{ server.ip }}/{{ server.mask }} via {{ server.iface }}"
+          - "Gateway  : {{ server.gateway }}"
+          - "Admin    : {{ server.admin_user }}"
+          - "RAID     : {{ raid.level }} com {{ raid.devices | join(', ') }}"
+
+  roles:
+    - role: common
+      tags: [common, packages]
+
+    - role: network
+      tags: [network]
+
+    - role: storage
+      tags: [storage, raid]
+
+    - role: samba
+      tags: [samba]
+
+    - role: security
+      tags: [security, firewall]
+
+    - role: php_panel
+      tags: [panel, php]
+
+    - role: flask_portal
+      tags: [portal, flask]
+
+  post_tasks:
+    - name: Resumo final
+      ansible.builtin.debug:
+        msg:
+          - "======================================================"
+          - "  INSTALAÇÃO CONCLUÍDA"
+          - "======================================================"
+          - "  Portal de arquivos : https://{{ server.ip }}"
+          - "  Painel admin Samba : https://{{ server.ip }}:8443"
+          - "  Acesso SMB         : \\\\{{ server.ip }}"
+          - "------------------------------------------------------"
+          - "  Samba/Portal : {{ server.admin_user }} / 1234  ⚠ TROCAR"
+          - "  Painel Admin : admin / admin              ⚠ TROCAR"
+          - "------------------------------------------------------"
+          - "  CA para navegador  : https://{{ server.ip }}/cdpni-ca.crt"
+          - "  RAID sincronizando : watch cat /proc/mdstat"
+          - "======================================================"

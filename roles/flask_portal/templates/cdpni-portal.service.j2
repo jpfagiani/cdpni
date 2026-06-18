@@ -1,0 +1,24 @@
+[Unit]
+Description=CDPNI Portal Flask
+After=network.target smbd.service
+RequiresMountsFor={{ raid.mount }}
+
+[Service]
+Type=simple
+User={{ portal.user }}
+Group={{ portal.user }}
+WorkingDirectory={{ portal.dir }}
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart={{ portal.dir }}/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 127.0.0.1:{{ portal.port }} \
+    --timeout 120 \
+    --access-logfile /var/log/cdpni_portal_access.log \
+    --error-logfile  /var/log/cdpni_portal_error.log \
+    app:app
+Restart=on-failure
+RestartSec=5
+ReadWritePaths={{ portal.dir }} {{ raid.mount }} /var/log
+
+[Install]
+WantedBy=multi-user.target

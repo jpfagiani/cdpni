@@ -1,0 +1,137 @@
+---
+- name: Instalar dependências Python
+  ansible.builtin.apt:
+    name: [python3, python3-pip, python3-venv, python3-pam]
+    state: present
+
+- name: Criar usuário de serviço do portal
+  ansible.builtin.user:
+    name: "{{ portal.user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ portal.dir }}"
+    create_home: false
+
+- name: Criar diretório do portal
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ portal.user }}"
+    group: "{{ portal.user }}"
+    mode: "0750"
+  loop:
+    - "{{ portal.dir }}"
+    - "{{ portal.dir }}/banners"
+
+- name: Criar virtualenv Python
+  ansible.builtin.command: python3 -m venv {{ portal.dir }}/venv
+  args:
+    creates: "{{ portal.dir }}/venv/bin/activate"
+  become_user: "{{ portal.user }}"
+
+- name: Instalar pacotes Python no virtualenv
+  ansible.builtin.pip:
+    name:
+      - flask==3.1.0
+      - python-pam==2.0.2
+      - gunicorn==23.0.0
+      - werkzeug==3.1.3
+    virtualenv: "{{ portal.dir }}/venv"
+    state: present
+
+- name: Gerar config.py do portal
+  ansible.builtin.template:
+    src: config.py.j2
+    dest: "{{ portal.dir }}/config.py"
+    owner: "{{ portal.user }}"
+    group: "{{ portal.user }}"
+    mode: "0640"
+
+- name: Copiar app.py
+  ansible.builtin.copy:
+    src: app.py
+    dest: "{{ portal.dir }}/app.py"
+    owner: "{{ portal.user }}"
+    group: "{{ portal.user }}"
+    mode: "0640"
+
+- name: Configurar ACL para o usuário do portal acessar os shares
+  ansible.posix.acl:
+    path: "{{ item }}"
+    entity: "{{ portal.user }}"
+    etype: user
+    permissions: rx
+    state: present
+  loop:
+    - "{{ raid.mount }}"
+    - "{{ raid.mount }}/shares"
+
+- name: Configurar ACL nos diretórios dos shares (leitura + escrita para o portal)
+  ansible.builtin.shell: |
+    find {{ raid.mount }}/shares -maxdepth 1 -type d \
+      -exec setfacl -m u:{{ portal.user }}:rwx {} \;
+  changed_when: false
+
+- name: Configurar sudoers para o portal (chpasswd + smbpasswd)
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/cdpni-portal
+    content: |
+      {{ portal.user }} ALL=(root) NOPASSWD: /usr/sbin/chpasswd, /usr/bin/smbpasswd
+    validate: visudo -cf %s
+    mode: "0440"
+
+- name: Criar serviço systemd do portal
+  ansible.builtin.template:
+    src: cdpni-portal.service.j2
+    dest: /etc/systemd/system/cdpni-portal.service
+    mode: "0644"
+  notify:
+    - reload systemd
+    - restart portal
+
+- name: Criar logs do portal
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: "{{ portal.user }}"
+    group: "{{ portal.user }}"
+    mode: "0664"
+  loop:
+    - /var/log/cdpni_portal_access.log
+    - /var/log/cdpni_portal_error.log
+
+- name: Configurar Nginx — portal (80 → 443)
+  ansible.builtin.template:
+    src: nginx-portal.conf.j2
+    dest: /etc/nginx/sites-available/cdpni-portal
+    mode: "0644"
+  notify: reload nginx
+
+- name: Ativar site do portal
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/cdpni-portal
+    dest: /etc/nginx/sites-enabled/cdpni-portal
+    state: link
+  notify: reload nginx
+
+- name: Habilitar e iniciar portal
+  ansible.builtin.systemd:
+    name: cdpni-portal
+    state: started
+    enabled: true
+    daemon_reload: true
+
+handlers:
+  - name: reload systemd
+    ansible.builtin.systemd:
+      daemon_reload: true
+
+  - name: restart portal
+    ansible.builtin.service:
+      name: cdpni-portal
+      state: restarted
+
+  - name: reload nginx
+    ansible.builtin.service:
+      name: nginx
+      state: reloaded

@@ -1,0 +1,139 @@
+---
+- name: Zerar superbloco dos discos
+  ansible.builtin.shell: |
+    mdadm --zero-superblock --force {{ item }} 2>/dev/null || true
+    wipefs -af {{ item }} 2>/dev/null || true
+  loop: "{{ raid.devices }}"
+  changed_when: true
+
+- name: Criar array RAID {{ raid.level }}
+  ansible.builtin.shell: |
+    mdadm --create {{ raid.device }} \
+      --level={{ raid.level }} \
+      --raid-devices={{ raid.devices | length }} \
+      {% if raid.level in [5, 6] %}--layout=left-symmetric --chunk=512K {% endif %}
+      {% if raid.level == 10 %}--layout=n2 --chunk=512K {% endif %}
+      --metadata=1.2 --name=data --force --run \
+      {{ raid.devices | join(' ') }}
+  args:
+    creates: "{{ raid.device }}"
+  register: raid_created
+
+- name: Aguardar dispositivo RAID ficar disponível
+  ansible.builtin.wait_for:
+    path: "{{ raid.device }}"
+    timeout: 60
+
+- name: Acelerar sincronização inicial do RAID
+  ansible.builtin.shell: echo 200000 > /proc/sys/dev/raid/speed_limit_min
+  changed_when: false
+  ignore_errors: true
+
+- name: Salvar configuração do RAID em mdadm.conf
+  ansible.builtin.shell: |
+    mdadm --detail --scan > /etc/mdadm/mdadm.conf
+    echo "MAILADDR root" >> /etc/mdadm/mdadm.conf
+  changed_when: true
+
+- name: Atualizar initramfs
+  ansible.builtin.command: update-initramfs -u -k all
+  changed_when: true
+
+- name: Formatar RAID com XFS
+  ansible.builtin.shell: |
+    {% set n = raid.devices | length %}
+    {% if raid.level == 5 %}
+    mkfs.xfs -f -L SAMBA_DATA -d su=512k,sw={{ n - 1 }} {{ raid.device }}
+    {% elif raid.level == 6 %}
+    mkfs.xfs -f -L SAMBA_DATA -d su=512k,sw={{ n - 2 }} {{ raid.device }}
+    {% elif raid.level == 10 %}
+    mkfs.xfs -f -L SAMBA_DATA -d su=512k,sw={{ (n / 2) | int }} {{ raid.device }}
+    {% else %}
+    mkfs.xfs -f -L SAMBA_DATA {{ raid.device }}
+    {% endif %}
+  args:
+    creates: "{{ raid.mount }}/.formatted"
+  register: xfs_format
+
+- name: Criar ponto de montagem
+  ansible.builtin.file:
+    path: "{{ raid.mount }}"
+    state: directory
+    mode: "0755"
+
+- name: Obter UUID do RAID
+  ansible.builtin.command: blkid -s UUID -o value {{ raid.device }}
+  register: raid_uuid
+  changed_when: false
+
+- name: Adicionar RAID ao fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "{{ raid.device }}"
+    line: "UUID={{ raid_uuid.stdout }}  {{ raid.mount }}  xfs  defaults,noatime,nodiratime,allocsize=64m,largeio  0  2"
+    state: present
+
+- name: Montar RAID
+  ansible.posix.mount:
+    path: "{{ raid.mount }}"
+    src: "UUID={{ raid_uuid.stdout }}"
+    fstype: xfs
+    opts: defaults,noatime,nodiratime,allocsize=64m,largeio
+    state: mounted
+
+- name: Criar estrutura de diretórios no RAID
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "{{ '1777' if 'recycle' in item else '0777' }}"
+  loop:
+    - "{{ raid.mount }}/shares"
+    - "{{ raid.mount }}/recycle"
+
+- name: Criar arquivo de marca de formatação
+  ansible.builtin.file:
+    path: "{{ raid.mount }}/.formatted"
+    state: touch
+    mode: "0644"
+
+- name: Instalar script de monitoramento RAID
+  ansible.builtin.copy:
+    dest: /usr/local/bin/raid_check.sh
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      RAID="{{ raid.device }}"
+      STATE=$(mdadm --detail "$RAID" 2>/dev/null | awk '/State :/{print $3}')
+      FAILED=$(mdadm --detail "$RAID" 2>/dev/null | awk '/Failed Devices/{print $4}')
+      FAILED=${FAILED:-0}
+      MSG=""
+      [[ "$FAILED" -gt 0 ]] && MSG+="DISCO FALHO (${FAILED})! "
+      [[ "$STATE" != "clean" && "$STATE" != "active" ]] && MSG+="Estado: ${STATE}. "
+      if [[ -n "$MSG" ]]; then
+          echo "$MSG" | mail -s "RAID ALERT $(hostname)" root 2>/dev/null || true
+          echo "$(date): $MSG" >> /var/log/raid_alert.log
+      fi
+      echo "=== $(date) ===" >> /var/log/raid_check.log
+      mdadm --detail "$RAID" >> /var/log/raid_check.log 2>&1
+
+- name: Agendar monitoramento RAID (cron horário)
+  ansible.builtin.cron:
+    name: "CDPNI RAID check"
+    minute: "0"
+    job: "/usr/local/bin/raid_check.sh"
+    user: root
+
+- name: Dependência do smbd no RAID (systemd drop-in)
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/smbd.service.d/raid-dependency.conf
+    content: |
+      [Unit]
+      RequiresMountsFor={{ raid.mount }}
+      After=local-fs.target
+    mode: "0644"
+  notify: reload systemd
+
+handlers:
+  - name: reload systemd
+    ansible.builtin.systemd:
+      daemon_reload: true

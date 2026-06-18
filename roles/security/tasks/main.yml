@@ -1,0 +1,133 @@
+---
+- name: Instalar UFW e Fail2ban
+  ansible.builtin.apt:
+    name: [ufw, fail2ban]
+    state: present
+
+# ── Firewall ──────────────────────────────────────────────────────────────────
+- name: Resetar UFW
+  community.general.ufw:
+    state: reset
+
+- name: Política padrão — bloquear entrada, permitir saída
+  community.general.ufw:
+    direction: "{{ item.dir }}"
+    policy: "{{ item.pol }}"
+  loop:
+    - { dir: incoming, pol: deny  }
+    - { dir: outgoing, pol: allow }
+
+- name: Regras de firewall
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+    comment: "{{ item.comment }}"
+  loop:
+    - { port: "22",   proto: tcp, comment: SSH }
+    - { port: "137",  proto: udp, comment: "Samba NetBIOS Name" }
+    - { port: "138",  proto: udp, comment: "Samba NetBIOS Datagram" }
+    - { port: "139",  proto: tcp, comment: "Samba NetBIOS Session" }
+    - { port: "445",  proto: tcp, comment: "Samba SMB" }
+    - { port: "80",   proto: tcp, comment: "HTTP redirect" }
+    - { port: "443",  proto: tcp, comment: "Portal HTTPS" }
+    - { port: "8443", proto: tcp, comment: "Painel Admin" }
+
+- name: Permitir rede LAN completa
+  community.general.ufw:
+    rule: allow
+    src: "{{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}"
+
+- name: Habilitar UFW
+  community.general.ufw:
+    state: enabled
+
+# ── Fail2ban ──────────────────────────────────────────────────────────────────
+- name: Configurar Fail2ban — jail Samba
+  ansible.builtin.template:
+    src: samba-jail.conf.j2
+    dest: /etc/fail2ban/jail.d/samba.conf
+    mode: "0644"
+  notify: restart fail2ban
+
+- name: Configurar Fail2ban — jail Portal Flask
+  ansible.builtin.template:
+    src: portal-jail.conf.j2
+    dest: /etc/fail2ban/jail.d/cdpni-portal.conf
+    mode: "0644"
+  notify: restart fail2ban
+
+- name: Filtro Fail2ban para o portal Flask
+  ansible.builtin.copy:
+    dest: /etc/fail2ban/filter.d/cdpni-portal.conf
+    content: |
+      [Definition]
+      failregex = .* - - \[.*\] "POST /login HTTP.* 200
+    mode: "0644"
+  notify: restart fail2ban
+
+- name: Habilitar e iniciar Fail2ban
+  ansible.builtin.service:
+    name: fail2ban
+    state: started
+    enabled: true
+
+# ── S.M.A.R.T. ────────────────────────────────────────────────────────────────
+- name: Configurar smartd
+  ansible.builtin.copy:
+    dest: /etc/smartd.conf
+    content: |
+      DEVICESCAN -a -o on -S on -n standby,q \
+        -s (S/../.././02|L/../../6/03) \
+        -m root -M exec /usr/share/smartmontools/smartd-runner
+    mode: "0644"
+  notify: restart smartd
+
+- name: Habilitar smartd
+  ansible.builtin.service:
+    name: smartd
+    state: started
+    enabled: true
+  ignore_errors: true
+
+# ── SSL ───────────────────────────────────────────────────────────────────────
+- name: Criar diretório SSL
+  ansible.builtin.file:
+    path: "{{ ssl.dir }}"
+    state: directory
+    mode: "0750"
+
+- name: Gerar certificado SSL autoassinado
+  ansible.builtin.command: >
+    openssl req -x509 -nodes -days {{ ssl.days }} -newkey rsa:2048
+      -keyout {{ ssl.key }}
+      -out    {{ ssl.cert }}
+      -subj   "/C={{ ssl.country }}/ST={{ ssl.state }}/O={{ ssl.org }}/CN={{ server.domain }}"
+      -addext "subjectAltName=DNS:{{ server.domain }},DNS:{{ server.hostname }},IP:{{ server.ip }}"
+  args:
+    creates: "{{ ssl.cert }}"
+  notify: copy ca to webroot
+
+- name: Proteger chave privada
+  ansible.builtin.file:
+    path: "{{ ssl.key }}"
+    mode: "0600"
+
+handlers:
+  - name: restart fail2ban
+    ansible.builtin.service:
+      name: fail2ban
+      state: restarted
+
+  - name: restart smartd
+    ansible.builtin.service:
+      name: smartd
+      state: restarted
+    ignore_errors: true
+
+  - name: copy ca to webroot
+    ansible.builtin.copy:
+      src: "{{ ssl.cert }}"
+      dest: /var/www/html/cdpni-ca.crt
+      remote_src: true
+      mode: "0644"

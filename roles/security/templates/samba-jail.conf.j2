@@ -1,0 +1,10 @@
+[samba]
+enabled  = true
+port     = 445,139
+protocol = tcp
+filter   = samba
+logpath  = /var/log/samba/log.%(__name__)s
+maxretry = 5
+bantime  = 3600
+findtime = 600
+ignoreip = 127.0.0.1/8 {{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}

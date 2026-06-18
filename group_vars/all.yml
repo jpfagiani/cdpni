@@ -1,0 +1,50 @@
+# =============================================================================
+# CDPNI — Variáveis padrão
+# Este arquivo é sobrescrito pelo bootstrap.sh com os valores interativos.
+# Edite manualmente apenas se não usar o bootstrap.
+# =============================================================================
+
+server:
+  ip:         "192.168.0.11"
+  mask:       "24"
+  gateway:    "192.168.0.1"
+  dns:        "192.168.0.1"
+  hostname:   "cdpni"
+  domain:     "cdpni.local"
+  admin_user: "sambadmin"
+  iface:      "eth0"
+
+raid:
+  level:   5
+  mount:   /mnt/raid
+  device:  /dev/md0
+  devices:
+    - /dev/sdb
+    - /dev/sdc
+    - /dev/sdd
+    - /dev/sde
+    - /dev/sdf
+
+samba:
+  workgroup:    "WORKGROUP"
+  default_pass: "1234"
+  log_dir:      /var/log/samba
+
+portal:
+  dir:  /opt/cdpni-portal
+  user: cdpni
+  port: 5000
+
+ssl:
+  dir:      /etc/nginx/ssl
+  cert:     /etc/nginx/ssl/cdpni.crt
+  key:      /etc/nginx/ssl/cdpni.key
+  days:     3650
+  country:  BR
+  state:    SP
+  org:      CDPNI
+
+panel:
+  dir:  /var/www/samba-panel
+  user: admin
+  pass: admin

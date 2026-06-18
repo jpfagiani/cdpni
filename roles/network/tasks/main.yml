@@ -1,0 +1,41 @@
+---
+- name: Backup do interfaces atual
+  ansible.builtin.copy:
+    src: /etc/network/interfaces
+    dest: "/etc/network/interfaces.bak.{{ ansible_date_time.epoch }}"
+    remote_src: true
+    mode: "0644"
+  ignore_errors: true
+
+- name: Configurar IP estático
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload networking
+
+- name: Aplicar IP imediatamente (sem reiniciar)
+  ansible.builtin.shell: |
+    ip addr flush dev {{ server.iface }} 2>/dev/null || true
+    ip addr add {{ server.ip }}/{{ server.mask }} dev {{ server.iface }} 2>/dev/null || true
+    ip link set {{ server.iface }} up
+    ip route replace default via {{ server.gateway }} dev {{ server.iface }} 2>/dev/null || true
+  changed_when: false
+  ignore_errors: true
+
+- name: Configurar DNS em /etc/resolv.conf
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    content: |
+      nameserver {{ server.dns }}
+      search {{ server.domain }}
+    mode: "0644"
+
+handlers:
+  - name: reload networking
+    ansible.builtin.service:
+      name: networking
+      state: restarted
+    ignore_errors: true

@@ -1,0 +1,4 @@
+server {{ server.gateway }} iburst prefer minpoll 4 maxpoll 6
+driftfile /var/lib/chrony/drift
+makestep 1.0 3
+rtcsync

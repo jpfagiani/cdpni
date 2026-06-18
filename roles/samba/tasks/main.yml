@@ -1,0 +1,112 @@
+---
+- name: Carregar variáveis do Samba
+  ansible.builtin.include_vars: main.yml
+
+- name: Instalar Samba
+  ansible.builtin.apt:
+    name: [samba, samba-common-bin, smbclient]
+    state: present
+
+- name: Criar grupos do sistema
+  ansible.builtin.group:
+    name: "{{ item }}"
+    system: true
+    state: present
+  loop: "{{ samba_groups }}"
+
+- name: Criar usuário administrador
+  ansible.builtin.user:
+    name: "{{ server.admin_user }}"
+    comment: "Administrador CDPNI"
+    shell: /usr/sbin/nologin
+    groups: "{{ samba_groups | join(',') }}"
+    append: false
+    create_home: true
+    password: "{{ samba.default_pass | password_hash('sha512') }}"
+  no_log: true
+
+- name: Criar usuários iniciais
+  ansible.builtin.user:
+    name: "{{ item.login }}"
+    comment: "{{ item.fullname }}"
+    shell: /usr/sbin/nologin
+    group: "{{ item.primary }}"
+    groups: "{{ item.groups | join(',') }}"
+    append: false
+    create_home: true
+    password: "{{ samba.default_pass | password_hash('sha512') }}"
+  loop: "{{ samba_users }}"
+  no_log: true
+
+- name: Registrar usuários no Samba (admin)
+  ansible.builtin.shell: |
+    printf '%s\n%s\n' '{{ samba.default_pass }}' '{{ samba.default_pass }}' \
+      | smbpasswd -s -a {{ server.admin_user }} 2>/dev/null || true
+    smbpasswd -e {{ server.admin_user }} 2>/dev/null || true
+  changed_when: false
+  no_log: true
+
+- name: Registrar usuários iniciais no Samba
+  ansible.builtin.shell: |
+    printf '%s\n%s\n' '{{ samba.default_pass }}' '{{ samba.default_pass }}' \
+      | smbpasswd -s -a {{ item.login }} 2>/dev/null || true
+    smbpasswd -e {{ item.login }} 2>/dev/null || true
+  loop: "{{ samba_users }}"
+  changed_when: false
+  no_log: true
+
+- name: Criar diretórios dos compartilhamentos
+  ansible.builtin.file:
+    path: "{{ raid.mount }}/shares/{{ item.name }}"
+    state: directory
+    mode: "0777"
+  loop: "{{ samba_shares }}"
+
+- name: Criar lixeiras pessoais
+  ansible.builtin.file:
+    path: "{{ raid.mount }}/recycle/{{ item.login }}"
+    state: directory
+    mode: "0700"
+    owner: "{{ item.login }}"
+    group: "{{ item.primary }}"
+  loop: "{{ samba_users }}"
+
+- name: Criar lixeira do admin
+  ansible.builtin.file:
+    path: "{{ raid.mount }}/recycle/{{ server.admin_user }}"
+    state: directory
+    mode: "0700"
+    owner: "{{ server.admin_user }}"
+
+- name: Fazer backup do smb.conf original
+  ansible.builtin.copy:
+    src: /etc/samba/smb.conf
+    dest: "/etc/samba/smb.conf.bak.{{ ansible_date_time.epoch }}"
+    remote_src: true
+    mode: "0644"
+  ignore_errors: true
+
+- name: Gerar smb.conf
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "testparm -s %s"
+  notify:
+    - restart samba
+
+- name: Habilitar e iniciar Samba
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [smbd, nmbd]
+
+handlers:
+  - name: restart samba
+    ansible.builtin.service:
+      name: "{{ item }}"
+      state: restarted
+    loop: [smbd, nmbd]
