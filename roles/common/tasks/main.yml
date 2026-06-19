@@ -78,6 +78,7 @@
 - name: Configurar logrotate para logs CDPNI
   ansible.builtin.copy:
     dest: /etc/logrotate.d/cdpni
+    mode: "0644"
     content: |
       /var/log/samba/log.* {
           weekly
@@ -99,7 +100,6 @@
           compress
           delaycompress
       }
-    mode: "0644"
 
 handlers:
   - name: restart chrony
