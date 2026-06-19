@@ -3,9 +3,9 @@
   ansible.builtin.apt:
     name:
       - nginx
-      - php8.3-fpm
-      - php8.3-cli
-      - php8.3-common
+      - php8.4-fpm
+      - php8.4-cli
+      - php8.4-common
     state: present
 
 - name: Criar diretório do painel
@@ -121,5 +121,5 @@
     name: "{{ item }}"
     state: started
     enabled: true
-  loop: [php8.3-fpm, nginx]
+  loop: [php8.4-fpm, nginx]
 
