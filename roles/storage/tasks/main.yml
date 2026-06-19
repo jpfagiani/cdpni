@@ -123,6 +123,12 @@
     job: "/usr/local/bin/raid_check.sh"
     user: root
 
+- name: Criar diretório drop-in smbd
+  ansible.builtin.file:
+    path: /etc/systemd/system/smbd.service.d
+    state: directory
+    mode: "0755"
+
 - name: Dependência do smbd no RAID (systemd drop-in)
   ansible.builtin.copy:
     dest: /etc/systemd/system/smbd.service.d/raid-dependency.conf
