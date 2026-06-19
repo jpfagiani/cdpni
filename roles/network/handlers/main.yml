@@ -1,0 +1,6 @@
+---
+  - name: reload networking
+    ansible.builtin.service:
+      name: networking
+      state: restarted
+    ignore_errors: true

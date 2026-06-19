@@ -117,26 +117,41 @@
     path: "{{ ssl.key }}"
     mode: "0600"
 
-handlers:
+  - name: reload nftables
   - name: reload nftables
     ansible.builtin.service:
+    ansible.builtin.service:
+      name: nftables
       name: nftables
       state: reloaded
-
+      state: reloaded
+  - name: restart fail2ban
   - name: restart fail2ban
     ansible.builtin.service:
+    ansible.builtin.service:
+      name: fail2ban
       name: fail2ban
       state: restarted
-
+      state: restarted
+  - name: restart smartd
   - name: restart smartd
     ansible.builtin.service:
+    ansible.builtin.service:
+      name: smartd
       name: smartd
       state: restarted
+      state: restarted
     ignore_errors: true
-
+    ignore_errors: true
+  - name: copy ca to webroot
   - name: copy ca to webroot
     ansible.builtin.copy:
+    ansible.builtin.copy:
+      src: "{{ ssl.cert }}"
       src: "{{ ssl.cert }}"
       dest: /var/www/html/cdpni-ca.crt
+      dest: /var/www/html/cdpni-ca.crt
       remote_src: true
+      remote_src: true
+      mode: "0644"
       mode: "0644"

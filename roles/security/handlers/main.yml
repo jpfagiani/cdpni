@@ -1,0 +1,23 @@
+---
+  - name: reload nftables
+    ansible.builtin.service:
+      name: nftables
+      state: reloaded
+
+  - name: restart fail2ban
+    ansible.builtin.service:
+      name: fail2ban
+      state: restarted
+
+  - name: restart smartd
+    ansible.builtin.service:
+      name: smartd
+      state: restarted
+    ignore_errors: true
+
+  - name: copy ca to webroot
+    ansible.builtin.copy:
+      src: "{{ ssl.cert }}"
+      dest: /var/www/html/cdpni-ca.crt
+      remote_src: true
+      mode: "0644"

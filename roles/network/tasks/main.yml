@@ -33,9 +33,13 @@
       search {{ server.domain }}
     mode: "0644"
 
-handlers:
+  - name: reload networking
   - name: reload networking
     ansible.builtin.service:
+    ansible.builtin.service:
+      name: networking
       name: networking
       state: restarted
+      state: restarted
+    ignore_errors: true
     ignore_errors: true

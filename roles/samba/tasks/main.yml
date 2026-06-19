@@ -104,9 +104,13 @@
     enabled: true
   loop: [smbd, nmbd]
 
-handlers:
+  - name: restart samba
   - name: restart samba
     ansible.builtin.service:
+    ansible.builtin.service:
+      name: "{{ item }}"
       name: "{{ item }}"
       state: restarted
+      state: restarted
+    loop: [smbd, nmbd]
     loop: [smbd, nmbd]

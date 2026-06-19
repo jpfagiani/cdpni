@@ -133,7 +133,9 @@
     mode: "0644"
   notify: reload systemd
 
-handlers:
+  - name: reload systemd
   - name: reload systemd
     ansible.builtin.systemd:
+    ansible.builtin.systemd:
+      daemon_reload: true
       daemon_reload: true

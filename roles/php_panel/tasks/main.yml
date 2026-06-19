@@ -123,13 +123,19 @@
     enabled: true
   loop: [php8.3-fpm, nginx]
 
-handlers:
+  - name: restart php-fpm
   - name: restart php-fpm
     ansible.builtin.service:
+    ansible.builtin.service:
+      name: php8.3-fpm
       name: php8.3-fpm
       state: restarted
-
+      state: restarted
+  - name: reload nginx
   - name: reload nginx
     ansible.builtin.service:
+    ansible.builtin.service:
       name: nginx
+      name: nginx
+      state: reloaded
       state: reloaded
