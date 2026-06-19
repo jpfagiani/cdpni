@@ -45,16 +45,16 @@ if($action==='change_panel_pass'){
 require_auth();
 
 if($action==='list_users'){
-    $out=run('sudo pdbedit -L -v 2>/dev/null');$users=[];$cur=[];
+    $out=run('sudo pdbedit -L 2>/dev/null');$users=[];
     foreach(explode("\n",$out['output'])as$l){
-        if(preg_match('/^Unix username:\s+(.+)/',$l,$m)){if($cur)$users[]=$cur;$cur=['user'=>trim($m[1]),'fullname'=>'','status'=>'Ativo','groups'=>[]];}
-        elseif(preg_match('/^Full Name:\s+(.*)/',$l,$m)&&$cur)$cur['fullname']=trim($m[1]);
-        elseif(preg_match('/^Account Flags:\s+\[(.+)\]/',$l,$m)&&$cur)$cur['status']=str_contains($m[1],'D')?'Desabilitado':'Ativo';
-    }
-    if($cur)$users[]=$cur;
-    foreach($users as&$u){
-        $g=run('id -nG '.escapeshellarg($u['user']).' 2>/dev/null');
-        $u['groups']=array_values(array_filter(explode(' ',trim($g['output']))));
+        if(!trim($l))continue;
+        $p=explode(':',$l);
+        $uname=trim($p[0]??'');
+        if(!$uname)continue;
+        $flags=run('sudo pdbedit -u '.escapeshellarg($uname).' 2>/dev/null | grep "Account Flags"');
+        $status=str_contains($flags['output'],'D')?'Desabilitado':'Ativo';
+        $g=run('id -nG '.escapeshellarg($uname).' 2>/dev/null');
+        $users[]=['user'=>$uname,'fullname'=>trim($p[2]??''),'status'=>$status,'groups'=>array_values(array_filter(explode(' ',trim($g['output']))))];
     }
     json_out($users);
 }
