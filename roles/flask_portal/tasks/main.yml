@@ -121,25 +121,3 @@
     enabled: true
     daemon_reload: true
 
-  - name: reload systemd
-  - name: reload systemd
-    ansible.builtin.systemd:
-    ansible.builtin.systemd:
-      daemon_reload: true
-      daemon_reload: true
-  - name: restart portal
-  - name: restart portal
-    ansible.builtin.service:
-    ansible.builtin.service:
-      name: cdpni-portal
-      name: cdpni-portal
-      state: restarted
-      state: restarted
-  - name: reload nginx
-  - name: reload nginx
-    ansible.builtin.service:
-    ansible.builtin.service:
-      name: nginx
-      name: nginx
-      state: reloaded
-      state: reloaded
