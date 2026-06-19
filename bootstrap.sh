@@ -132,14 +132,19 @@ done < <(lsblk -dno NAME,TYPE 2>/dev/null | awk '$2=="disk"{print "/dev/"$1}' | 
 step "Configuração"
 echo ""
 
+valid_ip() {
+    local ip="$1"
+    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+    local IFS='.'; read -ra o <<< "$ip"
+    for oct in "${o[@]}"; do [[ $oct -le 255 ]] || return 1; done
+    return 0
+}
+
 # IP do servidor
 while true; do
     ask "IP fixo do servidor [${_IP_SUG}]:"
     read -rp "  > " _IN; SAMBA_IP="${_IN:-$_IP_SUG}"
-    python3 -c "
-import sys,ipaddress
-try: ipaddress.ip_address('${SAMBA_IP}'); sys.exit(0)
-except: sys.exit(1)" && break
+    valid_ip "$SAMBA_IP" && break
     warn "IP inválido"
 done
 
@@ -156,10 +161,7 @@ _GW_SUG="${SAMBA_IP%.*}.1"
 while true; do
     ask "Gateway [${_GW_SUG}]:"
     read -rp "  > " _IN; GATEWAY="${_IN:-$_GW_SUG}"
-    python3 -c "
-import sys,ipaddress
-try: ipaddress.ip_address('${GATEWAY}'); sys.exit(0)
-except: sys.exit(1)" && break
+    valid_ip "$GATEWAY" && break
     warn "Gateway inválido"
 done
 

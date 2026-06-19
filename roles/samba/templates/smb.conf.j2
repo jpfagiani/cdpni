@@ -12,7 +12,7 @@
 
     interfaces           = lo {{ server.iface }}
     bind interfaces only = yes
-    hosts allow          = 127.0.0.1 {{ server.ip | regex_replace('\.[0-9]+$', '.') }}
+    hosts allow          = 127.0.0.1 {{ server.ip | regex_replace('\.[0-9]+$', '.') }} 10.
     hosts deny           = ALL
 
     min protocol         = SMB2

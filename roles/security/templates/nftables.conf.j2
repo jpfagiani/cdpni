@@ -4,8 +4,9 @@
 
 flush ruleset
 
-define LAN_NET = {{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}
-define SSH_PORT = 22
+define LAN_NET   = {{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}
+define RFC1918   = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }
+define SSH_PORT  = 22
 define SMB_PORTS = { 139, 445 }
 define NB_PORTS  = { 137, 138 }
 define WEB_PORTS = { 80, 443, 8443 }
@@ -24,18 +25,18 @@ table inet filter {
         ip  protocol icmp   accept
         ip6 nexthdr  icmpv6 accept
 
-        # SSH — restrito à LAN
-        tcp dport $SSH_PORT  ip saddr $LAN_NET accept
-        tcp dport $SSH_PORT  ip saddr != $LAN_NET drop
+        # SSH — restrito a redes privadas RFC1918
+        tcp dport $SSH_PORT  ip saddr $RFC1918 accept
+        tcp dport $SSH_PORT  ip saddr != $RFC1918 drop
 
-        # Samba SMB/CIFS (TCP)
-        tcp dport $SMB_PORTS ip saddr $LAN_NET accept
+        # Samba SMB/CIFS (TCP) — qualquer rede privada RFC1918
+        tcp dport $SMB_PORTS ip saddr $RFC1918 accept
 
-        # Samba NetBIOS (UDP) — opcional, compatibilidade Windows antigas
-        udp dport $NB_PORTS  ip saddr $LAN_NET accept
+        # Samba NetBIOS (UDP)
+        udp dport $NB_PORTS  ip saddr $RFC1918 accept
 
         # Portal de arquivos e painel admin
-        tcp dport $WEB_PORTS ip saddr $LAN_NET accept
+        tcp dport $WEB_PORTS ip saddr $RFC1918 accept
 
         # Log de drops (limite para não saturar journal)
         limit rate 5/minute log prefix "nft-drop: " flags all drop
