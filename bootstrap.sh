@@ -290,6 +290,30 @@ raid:
   device:  /dev/md0
   devices:
 ${_DISKS_YAML}
+
+samba:
+  workgroup:    "WORKGROUP"
+  default_pass: "Cdpni@2025"
+  log_dir:      /var/log/samba
+
+portal:
+  dir:  /opt/cdpni-portal
+  user: cdpni
+  port: 5000
+
+ssl:
+  dir:      /etc/nginx/ssl
+  cert:     /etc/nginx/ssl/cdpni.crt
+  key:      /etc/nginx/ssl/cdpni.key
+  days:     3650
+  country:  BR
+  state:    SP
+  org:      CDPNI
+
+panel:
+  dir:  /var/www/samba-panel
+  user: admin
+  pass: admin
 YAML
 
 ok "group_vars/all.yml gerado"
