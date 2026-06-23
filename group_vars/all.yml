@@ -1,7 +1,8 @@
 # =============================================================================
 # CDPNI — Variáveis padrão
-# Este arquivo é sobrescrito pelo bootstrap.sh com os valores interativos.
+# Este arquivo é SOBRESCRITO pelo bootstrap.sh com os valores interativos.
 # Edite manualmente apenas se não usar o bootstrap.
+# Nunca use este arquivo em produção sem alterar as senhas.
 # =============================================================================
 
 server:
@@ -27,7 +28,7 @@ raid:
 
 samba:
   workgroup:    "WORKGROUP"
-  default_pass: "1234"
+  default_pass: "ALTERAR_NO_BOOTSTRAP"
   log_dir:      /var/log/samba
 
 portal:
@@ -47,4 +48,4 @@ ssl:
 panel:
   dir:  /var/www/samba-panel
   user: admin
-  pass: admin
+  pass: "ALTERAR_NO_BOOTSTRAP"

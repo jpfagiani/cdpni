@@ -22,7 +22,7 @@ cat << 'BANNER'
 
 BANNER
 echo -e "${CYAN}  Servidor de Arquivos Samba — Instalador Ansible${NC}"
-echo -e "${DIM}  RAID 5 · Samba 4 · Portal Web · Painel Admin${NC}"
+echo -e "${DIM}  RAID · Samba 4 · Portal Web · Painel Admin${NC}"
 echo ""
 }
 
@@ -44,11 +44,9 @@ banner
 # =============================================================================
 step "Verificando pré-requisitos"
 
-# Python3
 command -v python3 &>/dev/null || { apt-get install -y -qq python3; ok "python3 instalado"; }
 ok "python3 $(python3 --version | cut -d' ' -f2)"
 
-# Ansible
 if ! command -v ansible-playbook &>/dev/null; then
     info "Instalando Ansible..."
     apt-get update -qq
@@ -62,24 +60,22 @@ ok "ansible $(ansible --version | head -1 | grep -oP '[\d.]+')"
 step "Interfaces de rede detectadas"
 
 echo ""
-printf "  ${CYAN}%-14s %-18s %-6s %-20s${NC}\n" "INTERFACE" "IP ATUAL" "CIDR" "REDE"
-echo -e "  ${DIM}$(printf '─%.0s' {1..60})${NC}"
+printf "  ${CYAN}%-5s %-14s %-18s %-6s %-20s${NC}\n" "Nº" "INTERFACE" "IP ATUAL" "CIDR" "REDE"
+echo -e "  ${DIM}$(printf '─%.0s' {1..68})${NC}"
 
 declare -A IFACE_IP IFACE_CIDR
-_BEST_IP=""; _BEST_MASK="24"; _BEST_IFACE=""
+declare -a IFACE_LIST=()
 
 while IFS= read -r _line; do
     _iface=$(awk '{print $1}' <<< "$_line")
     _cidr=$(awk '{print $2}' <<< "$_line")
     _ip="${_cidr%%/*}"; _prefix="${_cidr##*/}"
     _net=$(python3 -c "import ipaddress; print(str(ipaddress.ip_interface('${_cidr}').network))" 2>/dev/null || echo "-")
-    printf "  %-14s %-18s /%-5s %-20s\n" "$_iface" "$_ip" "$_prefix" "$_net"
-    IFACE_IP[$_iface]="$_ip"; IFACE_CIDR[$_iface]="$_prefix"
-    if [[ -z "$_BEST_IP" ]]; then
-        _BEST_IP="$_ip"; _BEST_MASK="$_prefix"; _BEST_IFACE="$_iface"
-    elif echo "$_ip" | grep -qE '^192\.168\.' && ! echo "$_BEST_IP" | grep -qE '^192\.168\.'; then
-        _BEST_IP="$_ip"; _BEST_MASK="$_prefix"; _BEST_IFACE="$_iface"
-    fi
+    IFACE_LIST+=("$_iface")
+    IFACE_IP[$_iface]="$_ip"
+    IFACE_CIDR[$_iface]="$_prefix"
+    _idx=${#IFACE_LIST[@]}
+    printf "  ${GREEN}[%-2s]${NC} %-14s %-18s /%-5s %-20s\n" "$_idx" "$_iface" "$_ip" "$_prefix" "$_net"
 done < <(ip -4 addr show 2>/dev/null | awk '
     /^[0-9]+:/ { iface=$2; gsub(/:$/,"",iface) }
     /inet / {
@@ -89,12 +85,64 @@ done < <(ip -4 addr show 2>/dev/null | awk '
     }
 ' | grep -v '^lo ')
 
-if [[ -n "$_BEST_IP" ]]; then
+# Verifica se detectou alguma interface
+if [[ ${#IFACE_LIST[@]} -eq 0 ]]; then
+    warn "Nenhuma interface privada detectada."
+    echo ""
+    ask "Informe manualmente a interface de rede (ex: eth0, ens18):"
+    read -rp "  > " _MANUAL_IFACE
+    SERVER_IFACE="${_MANUAL_IFACE:-eth0}"
+    _BEST_IP=""; _BEST_MASK="24"
+    IFACE_LIST+=("$SERVER_IFACE")
+    IFACE_IP[$SERVER_IFACE]=""
+    IFACE_CIDR[$SERVER_IFACE]="24"
+else
+    # Escolha de interface
+    echo ""
+    if [[ ${#IFACE_LIST[@]} -eq 1 ]]; then
+        SERVER_IFACE="${IFACE_LIST[0]}"
+        _BEST_IP="${IFACE_IP[$SERVER_IFACE]}"
+        _BEST_MASK="${IFACE_CIDR[$SERVER_IFACE]}"
+        info "Usando interface ${SERVER_IFACE} (única detectada)"
+    else
+        # Pré-seleciona a melhor (preferência: 192.168.x > 172.x > 10.x)
+        _BEST_IDX=1
+        for _i in "${!IFACE_LIST[@]}"; do
+            _ip="${IFACE_IP[${IFACE_LIST[$_i]}]}"
+            if echo "$_ip" | grep -qE '^192\.168\.'; then
+                _BEST_IDX=$(( _i + 1 )); break
+            elif echo "$_ip" | grep -qE '^172\.(1[6-9]|2[0-9]|3[01])\.'; then
+                _BEST_IDX=$(( _i + 1 ))
+            fi
+        done
+
+        echo ""
+        while true; do
+            ask "Selecione a interface de rede a usar [${_BEST_IDX}]:"
+            read -rp "  > " _IN
+            _SEL_IDX="${_IN:-$_BEST_IDX}"
+            if [[ "$_SEL_IDX" =~ ^[0-9]+$ ]] && \
+               [[ $_SEL_IDX -ge 1 ]] && \
+               [[ $_SEL_IDX -le ${#IFACE_LIST[@]} ]]; then
+                SERVER_IFACE="${IFACE_LIST[$((_SEL_IDX-1))]}"
+                _BEST_IP="${IFACE_IP[$SERVER_IFACE]}"
+                _BEST_MASK="${IFACE_CIDR[$SERVER_IFACE]}"
+                break
+            fi
+            warn "Número inválido. Digite entre 1 e ${#IFACE_LIST[@]}"
+        done
+    fi
+fi
+
+ok "Interface selecionada: ${SERVER_IFACE}  (IP atual: ${_BEST_IP:-não configurado})"
+
+# Sugestão de IP para o servidor (.11 na mesma sub-rede)
+if [[ -n "${_BEST_IP:-}" ]]; then
     _NET_PFX="${_BEST_IP%.*}"
     _IP_SUG="${_NET_PFX}.11"
 else
-    _IP_SUG="192.168.0.11"; _BEST_MASK="24"; _BEST_IFACE="eth0"
-    warn "Nenhuma interface privada detectada — usando padrão"
+    _IP_SUG="192.168.0.11"
+    _BEST_MASK="24"
 fi
 
 # =============================================================================
@@ -102,7 +150,6 @@ fi
 # =============================================================================
 step "Discos detectados"
 
-# Disco do SO
 _SRC=$(findmnt -n -o SOURCE / 2>/dev/null || echo "")
 _PKNAME=$(lsblk -no PKNAME "$_SRC" 2>/dev/null | head -1 || true)
 SYS_DISK="/dev/${_PKNAME:-$(basename "${_SRC:-sda}" | sed 's/[0-9]*$//')}"
@@ -137,6 +184,15 @@ valid_ip() {
     [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
     local IFS='.'; read -ra o <<< "$ip"
     for oct in "${o[@]}"; do [[ $oct -le 255 ]] || return 1; done
+    return 0
+}
+
+valid_pass() {
+    local p="$1"
+    [[ ${#p} -ge 8 ]] || return 1
+    [[ "$p" =~ [A-Z] ]] || return 1
+    [[ "$p" =~ [a-z] ]] || return 1
+    [[ "$p" =~ [0-9] ]] || return 1
     return 0
 }
 
@@ -181,7 +237,7 @@ done
 ask "Domínio local [cdpni.local]:"
 read -rp "  > " _IN; DOMAIN="${_IN:-cdpni.local}"
 
-# Admin
+# Admin user
 while true; do
     ask "Login do administrador [sambadmin]:"
     read -rp "  > " _IN; ADMIN_USER="${_IN:-sambadmin}"
@@ -189,8 +245,41 @@ while true; do
     warn "Username inválido (letras minúsculas, dígitos, _, -)"
 done
 
+# Senha do Samba (digitada, não exibida)
 echo ""
-# Seleção de discos
+echo -e "  ${DIM}Requisitos: mínimo 8 caracteres, letras maiúsculas, minúsculas e números.${NC}"
+while true; do
+    ask "Senha padrão dos usuários Samba:"
+    read -rsp "  > " SAMBA_PASS; echo ""
+    if ! valid_pass "$SAMBA_PASS"; then
+        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc. e número."
+        continue
+    fi
+    ask "Confirme a senha:"
+    read -rsp "  > " _PASS2; echo ""
+    [[ "$SAMBA_PASS" == "$_PASS2" ]] && break
+    warn "Senhas não coincidem"
+done
+ok "Senha Samba definida"
+
+# Senha do painel web (digitada, não exibida)
+echo ""
+while true; do
+    ask "Senha do painel web (admin) [porta 8443]:"
+    read -rsp "  > " PANEL_PASS; echo ""
+    if ! valid_pass "$PANEL_PASS"; then
+        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc. e número."
+        continue
+    fi
+    ask "Confirme a senha:"
+    read -rsp "  > " _PASS2; echo ""
+    [[ "$PANEL_PASS" == "$_PASS2" ]] && break
+    warn "Senhas não coincidem"
+done
+ok "Senha do painel definida"
+
+# Seleção de discos para RAID
+echo ""
 ask "Discos para o RAID (números separados por espaço, Enter = todos):"
 echo -e "${DIM}  Disponíveis: $(IFS=' '; echo "${AVAIL_DISKS[*]}")${NC}"
 while true; do
@@ -208,7 +297,6 @@ while true; do
             fi
         done
         [[ "$_ok" == false ]] && continue
-        # remove duplicatas
         mapfile -t RAID_DISKS < <(printf '%s\n' "${RAID_DISKS[@]}" | awk '!seen[$0]++')
     fi
     [[ ${#RAID_DISKS[@]} -ge 2 ]] && break
@@ -235,8 +323,7 @@ while true; do
     warn "Nível inválido para ${N} disco(s). Opções: ${RAID_OPTS[*]}"
 done
 
-# Detecta interface para o IP
-SERVER_IFACE="$_BEST_IFACE"
+# Atualiza SERVER_IFACE caso o IP digitado seja de outra sub-rede
 for _if in "${!IFACE_IP[@]}"; do
     _net_pfx="${IFACE_IP[$_if]%.*}"
     [[ "${SAMBA_IP%.*}" == "$_net_pfx" ]] && SERVER_IFACE="$_if"
@@ -249,12 +336,14 @@ echo ""
 echo -e "${CYAN}  ╔══════════════════════════════════════════════════════╗${NC}"
 echo -e "${CYAN}  ║              CONFIGURAÇÃO A SER APLICADA             ║${NC}"
 echo -e "${CYAN}  ╠══════════════════════════════════════════════════════╣${NC}"
-printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "IP / Máscara:"    "${SAMBA_IP}/${SAMBA_MASK}"
-printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Gateway:"          "${GATEWAY}"
-printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "DNS:"              "${DNS}"
-printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Interface:"        "${SERVER_IFACE}"
-printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Hostname:"         "${HOSTNAME}.${DOMAIN}"
-printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Admin:"            "${ADMIN_USER}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "IP / Máscara:"   "${SAMBA_IP}/${SAMBA_MASK}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Gateway:"         "${GATEWAY}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "DNS:"             "${DNS}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Interface:"       "${SERVER_IFACE}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Hostname:"        "${HOSTNAME}.${DOMAIN}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Admin:"           "${ADMIN_USER}"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Senha Samba:"     "$(printf '*%.0s' {1..${#SAMBA_PASS}})"
+printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "Senha Painel:"    "$(printf '*%.0s' {1..${#PANEL_PASS}})"
 printf  "${CYAN}  ║${NC}  %-24s %-27s${CYAN}║${NC}\n" "RAID ${RAID_LEVEL}:" "$(IFS=', '; echo "${RAID_DISKS[*]}")"
 echo -e "${CYAN}  ╠══════════════════════════════════════════════════════╣${NC}"
 echo -e "${CYAN}  ║${NC}  ${RED}⚠  TODOS OS DADOS NOS DISCOS SERÃO APAGADOS!${NC}       ${CYAN}║${NC}"
@@ -268,7 +357,6 @@ read -rp "  Iniciar instalação? [s/N]: " _CONF
 # =============================================================================
 mkdir -p "${SCRIPT_DIR}/group_vars"
 
-# Monta lista YAML de discos
 _DISKS_YAML=""
 for _d in "${RAID_DISKS[@]}"; do _DISKS_YAML+="    - ${_d}"$'\n'; done
 
@@ -290,10 +378,9 @@ raid:
   device:  /dev/md0
   devices:
 ${_DISKS_YAML}
-
 samba:
   workgroup:    "WORKGROUP"
-  default_pass: "Cdpni@2025"
+  default_pass: "${SAMBA_PASS}"
   log_dir:      /var/log/samba
 
 portal:
@@ -313,7 +400,7 @@ ssl:
 panel:
   dir:  /var/www/samba-panel
   user: admin
-  pass: admin
+  pass: "${PANEL_PASS}"
 YAML
 
 ok "group_vars/all.yml gerado"
