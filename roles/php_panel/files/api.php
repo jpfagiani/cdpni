@@ -173,11 +173,15 @@ if($action==='list_shares'){
         preg_match('/\['.preg_quote($name,'/').'\].*?(?=\n\[|\z)/s',$conf,$block);
         $b=$block[0]??'';
         $path=preg_match('/path\s*=\s*(.+)/i',$b,$m)?trim($m[1]):'';
-        $size='';
+        $size='';$last_access='-';
         if($path&&is_dir($path)){
             $df=shell_exec('df -h '.escapeshellarg($path).' 2>/dev/null | tail -1');
             $p=preg_split('/\s+/',trim($df??''));
             $size=($p[2]??'').'/'.($p[1]??'');
+            $at=fileatime($path);
+            $mt=filemtime($path);
+            $ts=max($at?:0,$mt?:0);
+            if($ts)$last_access=date('d/m/Y H:i',$ts);
         }
         $shares[]=[
             'name'=>$name,'path'=>$path,
@@ -185,10 +189,63 @@ if($action==='list_shares'){
             'writable'=>(bool)preg_match('/writable\s*=\s*yes/i',$b),
             'browse'=>!preg_match('/browseable\s*=\s*no/i',$b),
             'guest'=>(bool)preg_match('/guest ok\s*=\s*yes/i',$b),
-            'size'=>$size
+            'size'=>$size,'last_access'=>$last_access
         ];
     }
     json_out($shares);
+}
+
+if($action==='live_connections'){
+    $out=run('sudo smbstatus -S 2>/dev/null');
+    $conns=[];$past_sep=0;
+    foreach(explode("\n",$out['output'])as$line){
+        if(preg_match('/^-{10,}/',$line)){$past_sep++;continue;}
+        if($past_sep<1||!trim($line))continue;
+        if(preg_match('/^(\S+)\s+(\d+)\s+(\S+)\s+(.+)$/',trim($line),$m)){
+            $at=preg_replace('/\s+\w{3,4}$/','',$m[4]); // remove timezone
+            $conns[]=['share'=>$m[1],'pid'=>$m[2],'machine'=>$m[3],'connected_at'=>trim($at)];
+        }
+    }
+    json_out($conns);
+}
+
+if($action==='recent_access'){
+    $events=[];
+    // Preferência: full_audit via syslog (local5.notice)
+    $sl=run("grep 'smbd_audit' /var/log/syslog 2>/dev/null | tail -200");
+    if($sl['code']===0&&trim($sl['output'])){
+        foreach(array_reverse(explode("\n",$sl['output']))as$line){
+            if(!trim($line))continue;
+            if(preg_match('/^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}).*smbd_audit:\s+(.+)$/',$line,$m)){
+                $parts=explode('|',$m[2]);
+                if(count($parts)>=4){
+                    $op=trim($parts[3]??'');
+                    if(in_array($op,['connect','open','write']))// apenas eventos relevantes
+                        $events[]=['time'=>$m[1],'user'=>trim($parts[0]),'ip'=>trim($parts[1]),'share'=>trim($parts[2]),'op'=>$op];
+                }
+            }
+            if(count($events)>=30)break;
+        }
+    }
+    // Fallback: logs por cliente em /var/log/samba/log.*
+    if(empty($events)){
+        $files=is_dir('/var/log/samba')?glob('/var/log/samba/log.*'):[];
+        usort($files,fn($a,$b)=>filemtime($b)-filemtime($a));
+        foreach(array_slice($files,0,8)as$f){
+            $machine=str_replace('/var/log/samba/log.','',$f);
+            if(in_array($machine,['smbd','nmbd','winbindd','']))continue;
+            $lines=@file($f,FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES);
+            if(!$lines)continue;
+            foreach(array_reverse(array_slice($lines,-80))as$l){
+                if(preg_match('/^\[(\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2})/',$l,$m)){
+                    if(stripos($l,'connect')!==false||stripos($l,'logged on')!==false||stripos($l,'open')!==false)
+                        $events[]=['time'=>str_replace('/','-',$m[1]),'machine'=>$machine,'op'=>trim(substr($l,strpos($l,']')+2,100))];
+                }
+                if(count($events)>=30)break 2;
+            }
+        }
+    }
+    json_out(array_slice($events,0,30));
 }
 if($action==='create_share'){
     $name=preg_replace('/[^a-zA-Z0-9_\-]/','',trim($_POST['name']??''));

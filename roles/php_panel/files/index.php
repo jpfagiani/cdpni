@@ -169,17 +169,44 @@ function goto(page){
 const renders={
   async dashboard(){
     try{
-      const s=await api('status');
+      const [s,conns,acc]=await Promise.all([api('status'),api('live_connections'),api('recent_access')]);
       const ok=v=>v==='active';
+      const now=new Date().toLocaleTimeString('pt-BR');
+      const opIcon=o=>({connect:'🔗',open:'📂',write:'✏️'}[o]||'·');
       $('ct').innerHTML=`
+        <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
+          <span style="font-size:.75rem;color:var(--muted)">Atualizado às ${now} <button onclick="renders.dashboard()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:.75rem">↺ atualizar</button></span>
+        </div>
         <div class="status-grid">
           <div class="stat-card"><div class="label">Samba (smbd)</div><div class="value" style="font-size:1rem;margin-top:.4rem"><span class="dot ${ok(s.smbd)?'dot-green':'dot-red'}"></span>${ok(s.smbd)?'Ativo':'Inativo'}</div></div>
           <div class="stat-card"><div class="label">NetBIOS (nmbd)</div><div class="value" style="font-size:1rem;margin-top:.4rem"><span class="dot ${ok(s.nmbd)?'dot-green':'dot-red'}"></span>${ok(s.nmbd)?'Ativo':'Inativo'}</div></div>
           <div class="stat-card"><div class="label">Espaço usado</div><div class="value">${esc(s.disk_used||'-')}</div><div class="sub">de ${esc(s.disk_total||'-')} — livre: ${esc(s.disk_avail||'-')} (${esc(s.disk_pct||'-')})</div></div>
-          <div class="stat-card"><div class="label">Conexões ativas</div><div class="value">${esc(s.connections)}</div></div>
+          <div class="stat-card"><div class="label">Sessões agora</div><div class="value">${esc(conns.length)}</div></div>
           <div class="stat-card"><div class="label">Usuários</div><div class="value">${esc(s.users_count||'-')}</div></div>
           <div class="stat-card"><div class="label">Compartilhamentos</div><div class="value">${esc(s.shares_count||'-')}</div></div>
           <div class="stat-card" style="grid-column:span 2"><div class="label">Uptime</div><div class="value" style="font-size:.95rem;margin-top:.35rem">${esc(s.uptime||'-')}</div></div>
+        </div>
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-header"><h4>🔴 Conexões em tempo real (${conns.length})</h4></div>
+          ${conns.length?`<table><thead><tr><th>Share</th><th>PID</th><th>Máquina / IP</th><th>Conectado em</th></tr></thead>
+          <tbody>${conns.map(c=>`<tr>
+            <td><span style="font-family:var(--mono);font-weight:500">${esc(c.share)}</span></td>
+            <td style="font-family:var(--mono);color:var(--muted)">${esc(c.pid)}</td>
+            <td style="font-family:var(--mono)">${esc(c.machine)}</td>
+            <td style="color:var(--muted);font-size:.8rem">${esc(c.connected_at)}</td>
+          </tr>`).join('')}</tbody></table>`
+          :'<p style="padding:1rem 1.25rem;color:var(--muted);font-size:.85rem">Nenhuma sessão ativa no momento.</p>'}
+        </div>
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-header"><h4>📋 Últimos acessos</h4></div>
+          ${acc.length?`<table><thead><tr><th>Data/Hora</th><th>Usuário</th><th>Share</th><th>Operação</th></tr></thead>
+          <tbody>${acc.map(a=>`<tr>
+            <td style="font-family:var(--mono);font-size:.75rem;color:var(--muted);white-space:nowrap">${esc(a.time)}</td>
+            <td style="font-family:var(--mono);font-weight:500">${esc(a.user||a.machine||'-')}</td>
+            <td>${esc(a.share||'-')}</td>
+            <td>${opIcon(a.op)} <span class="tag" style="font-size:.72rem">${esc(a.op||'-')}</span></td>
+          </tr>`).join('')}</tbody></table>`
+          :'<p style="padding:1rem 1.25rem;color:var(--muted);font-size:.85rem">Nenhum acesso registrado ainda. Verifique se o syslog está configurado com facility local5.</p>'}
         </div>
         <div class="card"><div class="card-header"><h4>Status RAID</h4></div>
         <pre style="padding:1rem 1.25rem;font-family:var(--mono);font-size:.78rem;color:var(--muted);white-space:pre-wrap">${esc(s.raid||'N/D')}</pre></div>`;
@@ -230,12 +257,13 @@ const renders={
       const s=await api('list_shares');
       if(!s.length){$('ct').innerHTML='<div class="empty"><span class="icon">🗂️</span>Nenhum share</div>';return;}
       $('ct').innerHTML=`<div class="card"><div class="card-header"><h4>Compartilhamentos (${s.length})</h4></div>
-        <table><thead><tr><th>Nome</th><th>Caminho</th><th>Disco</th><th>Flags</th><th style="text-align:right">Ações</th></tr></thead>
+        <table><thead><tr><th>Nome</th><th>Caminho</th><th>Disco</th><th>Último acesso</th><th>Flags</th><th style="text-align:right">Ações</th></tr></thead>
         <tbody>${s.map(x=>`<tr>
           <td><span style="font-family:var(--mono);font-weight:500">${esc(x.name)}</span></td>
-          <td style="color:var(--muted);font-size:.8rem;font-family:var(--mono)">${esc(x.path)}</td>
-          <td style="font-family:var(--mono);font-size:.8rem">${esc(x.size||'-')}</td>
-          <td>${x.writable?'<span class="tag tag-green">gravável</span>':'<span class="tag">leitura</span>'} ${x.browse?'<span class="tag">visível</span>':'<span class="tag tag-red">oculto</span>'}</td>
+          <td style="color:var(--muted);font-size:.78rem;font-family:var(--mono)">${esc(x.path)}</td>
+          <td style="font-family:var(--mono);font-size:.78rem">${esc(x.size||'-')}</td>
+          <td style="font-family:var(--mono);font-size:.78rem;color:var(--muted);white-space:nowrap">${esc(x.last_access||'-')}</td>
+          <td>${x.writable?'<span class="tag tag-green">gravável</span>':'<span class="tag">leitura</span>'} ${x.browse?'<span class="tag">visível</span>':'<span class="tag tag-red">oculto</span>'} ${x.guest?'<span class="tag tag-blue">guest</span>':''}</td>
           <td style="text-align:right"><button class="btn btn-sm btn-danger" onclick="deleteShare('${esc(x.name)}','${esc(x.path)}')">🗑 Excluir</button></td>
         </tr>`).join('')}</tbody></table></div>`;
     }catch(e){$('ct').innerHTML=`<div class="empty"><span class="icon">⚠️</span>${esc(e.message)}</div>`;}
@@ -321,12 +349,12 @@ function deleteShare(name,path){
     }}]);
 }
 function openCreateGroup(){
-  modal('Novo Grupo',`<div class="form-group"><label>Nome (será prefixado com grp_) *</label><input type="text" id="gN" placeholder="ex: financeiro"></div>`,[
+  modal('Novo Grupo',`<div class="form-group"><label>Nome do grupo *</label><input type="text" id="gN" placeholder="ex: financeiro2025"></div>`,[
     {label:'Cancelar',fn:closeModal},
     {label:'Criar',cls:'btn-primary',fn:async()=>{
       const name=$('gN').value.trim();
       if(!name)return toast('Informe o nome','error');
-      try{await api('create_group',{name},'POST');toast(`Grupo grp_${name} criado`);closeModal();renders.groups();}
+      try{await api('create_group',{name},'POST');toast(`Grupo ${name} criado`);closeModal();renders.groups();}
       catch(e){toast(e.message,'error');}
     }}]);
 }
@@ -429,7 +457,18 @@ async function openCreateShare(){
       catch(e){toast(e.message,'error');}
     }}]);
 }
-<?php if($logged): ?>goto('dashboard');<?php endif; ?>
+<?php if($logged): ?>
+// Intercepta goto para gerenciar auto-refresh do dashboard
+let _autoRefresh=null;
+const _gotoOrig=goto;
+window.goto=function(page){
+  clearInterval(_autoRefresh);
+  _gotoOrig(page);
+  if(page==='dashboard')
+    _autoRefresh=setInterval(()=>renders.dashboard(),30000);
+};
+goto('dashboard');
+<?php endif; ?>
 </script>
 </body>
 </html>
