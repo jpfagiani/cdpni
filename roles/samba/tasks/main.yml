@@ -7,38 +7,64 @@
     name: [samba, samba-common-bin, smbclient]
     state: present
 
-- name: Criar grupos do sistema
+# ── Grupos ────────────────────────────────────────────────────────────────────
+
+- name: Criar grupos dos compartilhamentos
   ansible.builtin.group:
     name: "{{ item }}"
     system: true
     state: present
   loop: "{{ samba_groups }}"
 
-- name: Criar usuário administrador
+# ── Usuários por compartilhamento ─────────────────────────────────────────────
+
+- name: Criar usuário Linux por compartilhamento
+  ansible.builtin.user:
+    name: "{{ item.name | lower }}"
+    comment: "{{ item.name | replace('_', ' ') }}"
+    shell: /usr/sbin/nologin
+    group: "{{ item.name | lower }}"
+    create_home: false
+    password: "{{ samba.default_pass | password_hash('sha512') }}"
+  loop: "{{ samba_shares }}"
+  no_log: true
+
+- name: Registrar usuários dos compartilhamentos no Samba
+  ansible.builtin.shell: |
+    printf '%s\n%s\n' '{{ samba.default_pass }}' '{{ samba.default_pass }}' \
+      | smbpasswd -s -a {{ item.name | lower }} 2>/dev/null || true
+    smbpasswd -e {{ item.name | lower }} 2>/dev/null || true
+  loop: "{{ samba_shares }}"
+  changed_when: false
+  no_log: true
+
+# ── Usuários operacionais (admin + supervisao) ─────────────────────────────────
+
+- name: Criar usuário administrador do servidor
   ansible.builtin.user:
     name: "{{ server.admin_user }}"
     comment: "Administrador CDPNI"
     shell: /usr/sbin/nologin
-    groups: "{{ samba_groups | join(',') }}"
+    groups: "{{ samba_all_groups | join(',') }}"
     append: false
     create_home: true
     password: "{{ samba.default_pass | password_hash('sha512') }}"
   no_log: true
 
-- name: Criar usuários iniciais
+- name: Criar usuários operacionais (jpfagiani, rcborges, cpd, supervisao)
   ansible.builtin.user:
     name: "{{ item.login }}"
     comment: "{{ item.fullname }}"
     shell: /usr/sbin/nologin
     group: "{{ item.primary }}"
-    groups: "{{ item.groups | join(',') }}"
+    groups: "{{ item.groups }}"
     append: false
     create_home: true
     password: "{{ samba.default_pass | password_hash('sha512') }}"
   loop: "{{ samba_users }}"
   no_log: true
 
-- name: Registrar usuários no Samba (admin)
+- name: Registrar admin do servidor no Samba
   ansible.builtin.shell: |
     printf '%s\n%s\n' '{{ samba.default_pass }}' '{{ samba.default_pass }}' \
       | smbpasswd -s -a {{ server.admin_user }} 2>/dev/null || true
@@ -46,7 +72,7 @@
   changed_when: false
   no_log: true
 
-- name: Registrar usuários iniciais no Samba
+- name: Registrar usuários operacionais no Samba
   ansible.builtin.shell: |
     printf '%s\n%s\n' '{{ samba.default_pass }}' '{{ samba.default_pass }}' \
       | smbpasswd -s -a {{ item.login }} 2>/dev/null || true
@@ -55,14 +81,18 @@
   changed_when: false
   no_log: true
 
-- name: Criar diretórios dos compartilhamentos
+# ── Diretórios ─────────────────────────────────────────────────────────────────
+
+- name: Criar diretórios dos compartilhamentos (0777 — controle via Samba)
   ansible.builtin.file:
     path: "{{ raid.mount }}/shares/{{ item.name }}"
     state: directory
+    owner: "{{ item.name | lower }}"
+    group: "{{ item.name | lower }}"
     mode: "0777"
   loop: "{{ samba_shares }}"
 
-- name: Criar lixeiras pessoais
+- name: Criar lixeiras pessoais dos usuários operacionais
   ansible.builtin.file:
     path: "{{ raid.mount }}/recycle/{{ item.login }}"
     state: directory
@@ -71,12 +101,14 @@
     group: "{{ item.primary }}"
   loop: "{{ samba_users }}"
 
-- name: Criar lixeira do admin
+- name: Criar lixeira do admin do servidor
   ansible.builtin.file:
     path: "{{ raid.mount }}/recycle/{{ server.admin_user }}"
     state: directory
     mode: "0700"
     owner: "{{ server.admin_user }}"
+
+# ── smb.conf ──────────────────────────────────────────────────────────────────
 
 - name: Fazer backup do smb.conf original
   ansible.builtin.copy:
@@ -103,4 +135,3 @@
     state: started
     enabled: true
   loop: [smbd, nmbd]
-

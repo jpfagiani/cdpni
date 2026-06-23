@@ -62,10 +62,10 @@ if($action==='create_user'){
     $user=sanitize_user($_POST['user']??'');
     $full=trim($_POST['fullname']??$user);
     $pass=$_POST['pass']??'1234';
-    $groups=trim($_POST['groups']??'grp_publico');
+    $groups=trim($_POST['groups']??'publico');
     if(!$user)json_out(['error'=>'Nome inválido'],400);
     if(strlen($pass)<4)json_out(['error'=>'Senha mínima 4 caracteres'],400);
-    $primary=explode(',',$groups)[0]??'grp_publico';
+    $primary=explode(',',$groups)[0]??'publico';
     $extra=implode(',',array_slice(explode(',',$groups),1));
     $cmd='sudo useradd -m -c '.escapeshellarg($full).' -s /usr/sbin/nologin -g '.escapeshellarg($primary);
     if($extra)$cmd.=' -G '.escapeshellarg($extra);
@@ -83,6 +83,8 @@ if($action==='create_user'){
 if($action==='delete_user'){
     $user=sanitize_user($_POST['user']??'');
     if(!$user)json_out(['error'=>'Inválido'],400);
+    $protected=['jpfagiani','rcborges','cpd','supervisao'];
+    if(in_array($user,$protected))json_out(['error'=>'Usuário protegido — não pode ser excluído'],403);
     run('sudo smbpasswd -x '.escapeshellarg($user).' 2>/dev/null');
     run('sudo userdel -r '.escapeshellarg($user).' 2>/dev/null');
     $rec=RECYCLE_DIR."/{$user}";
@@ -110,18 +112,26 @@ if($action==='toggle_user'){
     json_out(['ok'=>true]);
 }
 if($action==='list_groups'){
-    $out=run("getent group | grep '^grp_'");
+    // Grupos do sistema criados para os compartilhamentos (GID >= 1000)
+    $skip=['root','daemon','bin','sys','adm','tty','disk','lp','mail','news','uucp','man','proxy',
+           'kmem','dialout','fax','voice','cdrom','floppy','tape','sudo','audio','dip','www-data',
+           'backup','operator','list','irc','src','shadow','utmp','video','sasl','plugdev','staff',
+           'games','users','nogroup','systemd-journal','netdev','input','render','crontab','syslog',
+           'messagebus','ssh','ssl-cert','lpadmin','scanner','sambashare','bluetooth','ansible'];
+    $out=run("getent group | awk -F: '\$3 >= 1000 {print}'");
     $groups=[];
     foreach(explode("\n",$out['output'])as$line){
         if(!$line)continue;
         $p=explode(':',$line);
+        if(in_array($p[0],$skip))continue;
         $groups[]=['name'=>$p[0],'gid'=>$p[2],'members'=>$p[3]?array_values(array_filter(explode(',',$p[3]))):[]];
     }
+    usort($groups,fn($a,$b)=>strcmp($a['name'],$b['name']));
     json_out($groups);
 }
 if($action==='create_group'){
-    $name='grp_'.sanitize_group($_POST['name']??'');
-    if($name==='grp_')json_out(['error'=>'Nome inválido'],400);
+    $name=sanitize_group($_POST['name']??'');
+    if(!$name)json_out(['error'=>'Nome inválido'],400);
     $r=run('sudo groupadd '.escapeshellarg($name).' 2>&1');
     if($r['code']!==0&&str_contains($r['output'],'already exists'))json_out(['error'=>'Grupo já existe'],409);
     log_action("Grupo criado: {$name}");
@@ -146,7 +156,7 @@ if($action==='remove_from_group'){
 if($action==='delete_group'){
     $group=sanitize_group($_POST['group']??'');
     if(!$group)json_out(['error'=>'Grupo inválido'],400);
-    $protected=['grp_publico','grp_cpd','grp_administrativo'];
+    $protected=['cpd','supervisao','publico'];
     if(in_array($group,$protected))json_out(['error'=>'Grupo protegido — não pode ser excluído'],403);
     $r=run('sudo groupdel '.escapeshellarg($group).' 2>&1');
     if($r['code']!==0&&!str_contains($r['output'],'does not exist'))
@@ -174,6 +184,7 @@ if($action==='list_shares'){
             'comment'=>preg_match('/comment\s*=\s*(.+)/i',$b,$m)?trim($m[1]):'',
             'writable'=>(bool)preg_match('/writable\s*=\s*yes/i',$b),
             'browse'=>!preg_match('/browseable\s*=\s*no/i',$b),
+            'guest'=>(bool)preg_match('/guest ok\s*=\s*yes/i',$b),
             'size'=>$size
         ];
     }
@@ -185,11 +196,21 @@ if($action==='create_share'){
     $comment=htmlspecialchars(trim($_POST['comment']??$name),ENT_QUOTES,'UTF-8');
     $writable=($_POST['writable']??'1')==='1'?'yes':'no';
     $browse=($_POST['browse']??'1')==='1'?'yes':'no';
-    if(!$name||!$group)json_out(['error'=>'Nome e grupo obrigatórios'],400);
+    $guest=($_POST['guest']??'0')==='1';
+    if(!$name||(!$group&&!$guest))json_out(['error'=>'Nome obrigatório; grupo obrigatório para shares privadas'],400);
     $path=SAMBA_ROOT."/{$name}";
     run('sudo mkdir -p '.escapeshellarg($path));
     run('sudo chmod -R 777 '.escapeshellarg($path));
-    $entry="\n[{$name}]\n    comment      = {$comment}\n    path         = {$path}\n    valid users  = @{$group} ".PANEL_USER."\n    writable     = {$writable}\n    browseable   = {$browse}\n    create mask  = 0664\n    directory mask = 0777\n    force create mode = 0664\n    force directory mode = 0777\n";
+    if($group){
+        run('sudo groupadd '.escapeshellarg($group).' 2>/dev/null || true');
+        run('sudo chown root:'.escapeshellarg($group).' '.escapeshellarg($path));
+    }
+    if($guest){
+        $valid_line="    guest ok             = yes\n    public               = yes\n";
+    } else {
+        $valid_line="    guest ok             = no\n    valid users          = @{$group} jpfagiani rcborges ".PANEL_USER."\n";
+    }
+    $entry="\n[{$name}]\n    comment              = {$comment}\n    path                 = {$path}\n    writable             = {$writable}\n    browseable           = {$browse}\n{$valid_line}    create mask          = 0664\n    directory mask       = 0777\n    force create mode    = 0664\n    force directory mode = 0777\n";
     file_put_contents(SMB_CONF,$entry,FILE_APPEND);
     $t=run('sudo testparm -s '.escapeshellarg(SMB_CONF).' 2>&1');
     if(str_contains($t['output'],'FATAL'))json_out(['error'=>'Erro smb.conf'],500);
@@ -227,7 +248,6 @@ if($action==='status'){
     $disk=run('df -h '.escapeshellarg(SAMBA_ROOT).' 2>/dev/null | tail -1');
     $conns=run('sudo smbstatus -S 2>/dev/null | grep -cv "^\$\|^-\|^Share" 2>/dev/null || echo 0');
     $uptime=run('uptime -p 2>/dev/null');
-    $smart=run('smartctl --scan 2>/dev/null | wc -l');
     $users_count=run('sudo pdbedit -L 2>/dev/null | wc -l');
     $shares_count=run('grep -c "^\[" '.escapeshellarg(SMB_CONF).' 2>/dev/null || echo 0');
     $p=preg_split('/\s+/',trim($disk['output']??''));

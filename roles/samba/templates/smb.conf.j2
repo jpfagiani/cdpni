@@ -1,5 +1,5 @@
 # smb.conf — {{ server.hostname }} — gerado pelo Ansible em {{ ansible_date_time.date }}
-# NÃO edite manualmente; use o Ansible para mudanças permanentes.
+# NÃO edite manualmente; use o Ansible ou o painel web para mudanças permanentes.
 
 [global]
     workgroup            = {{ samba.workgroup }}
@@ -8,7 +8,10 @@
     server role          = standalone server
     security             = user
     passdb backend       = tdbsam
-    map to guest         = never
+    map to guest         = bad user
+
+    # Administradores Samba — bypass de permissões de share
+    admin users          = {{ server.admin_user }} jpfagiani cpd
 
     interfaces           = lo {{ server.iface }}
     bind interfaces only = yes
@@ -61,33 +64,32 @@
 [Recycle]
     comment     = Lixeira
     path        = {{ raid.mount }}/recycle
-    valid users = {{ server.admin_user }}
+    valid users = {{ server.admin_user }} jpfagiani cpd
     writable    = no
     browseable  = no
 
 {% for share in samba_shares %}
+{% set grp = share.name | lower %}
 {% set share_path = raid.mount + '/shares/' + share.name %}
-{% if share.group == 'all' %}
-{#  Pastas abertas a todos os grupos #}
-{% set valid = samba_all_groups %}
-{% elif share.restrict_to_group_only is defined and share.restrict_to_group_only %}
-{#  Restrito ao grupo + admin (sem supervisao) #}
-{% set valid = '@' + share.group + ' ' + server.admin_user %}
-{% else %}
-{#  Regra padrão: grupo + extras + supervisao + admin #}
-{% set extra_g = share.extra_groups | default([]) | map('regex_replace', '^', '@') | join(' ') %}
-{% set extra_u = share.extra_users  | default([]) | join(' ') %}
-{% set valid = ('@' + share.group + ' ' + extra_g + ' ' + extra_u + ' supervisao ' + server.admin_user) | regex_replace('\s+', ' ') | trim %}
-{% endif %}
+
 [{{ share.name }}]
-    comment         = {{ share.name | replace('_', ' ') }}
-    path            = {{ share_path }}
-    valid users     = {{ valid }}
-    writable        = yes
-    browseable      = {{ share.browseable | default('yes') }}
-    create mask     = 0664
-    directory mask  = 0777
+    comment              = {{ share.name | replace('_', ' ') }}
+    path                 = {{ share_path }}
+    writable             = yes
+    browseable           = {{ 'no' if share.type == 'guest_hidden' else 'yes' }}
+    create mask          = 0664
+    directory mask       = 0777
     force create mode    = 0664
     force directory mode = 0777
+{% if share.type in ['guest', 'guest_hidden'] %}
+    guest ok             = yes
+    public               = yes
+{% elif share.type == 'restricted' %}
+    guest ok             = no
+    valid users          = @{{ grp }} jpfagiani rcborges {{ server.admin_user }}
+{% else %}
+    guest ok             = no
+    valid users          = @{{ grp }} jpfagiani rcborges supervisao {{ server.admin_user }}
+{% endif %}
 
 {% endfor %}
