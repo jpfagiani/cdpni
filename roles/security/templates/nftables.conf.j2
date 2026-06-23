@@ -1,15 +1,17 @@
 #!/usr/sbin/nft -f
-# CDPNI — gerado pelo Ansible
-# Consistente com o gateway nftables da organização
+# CDPNI — gerado pelo Ansible em {{ ansible_date_time.date }}
+# Consistente com o gateway nftables da organização (GWOS)
 
 flush ruleset
 
-define LAN_NET   = {{ server.ip | regex_replace('\.[0-9]+$', '.0') }}/{{ server.mask }}
-define RFC1918   = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }
+# Redes privadas RFC1918 completas
+define RFC1918 = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }
+
 define SSH_PORT  = 22
 define SMB_PORTS = { 139, 445 }
 define NB_PORTS  = { 137, 138 }
 define WEB_PORTS = { 80, 443, 8443 }
+define FLASK_PORT = 5000
 
 table inet filter {
 
@@ -25,21 +27,23 @@ table inet filter {
         ip  protocol icmp   accept
         ip6 nexthdr  icmpv6 accept
 
-        # SSH — restrito a redes privadas RFC1918
+        # SSH — restrito a todas as redes privadas RFC1918
         tcp dport $SSH_PORT  ip saddr $RFC1918 accept
-        tcp dport $SSH_PORT  ip saddr != $RFC1918 drop
 
-        # Samba SMB/CIFS (TCP) — qualquer rede privada RFC1918
+        # Samba SMB/CIFS (TCP) — 10.*, 172.16-31.*, 192.168.*
         tcp dport $SMB_PORTS ip saddr $RFC1918 accept
 
-        # Samba NetBIOS (UDP)
+        # Samba NetBIOS (UDP) — resolução de nomes Windows
         udp dport $NB_PORTS  ip saddr $RFC1918 accept
 
-        # Portal de arquivos e painel admin
+        # Portal de arquivos (HTTPS/443) e painel admin (8443)
         tcp dport $WEB_PORTS ip saddr $RFC1918 accept
 
-        # Log de drops (limite para não saturar journal)
-        limit rate 5/minute log prefix "nft-drop: " flags all drop
+        # Portal Flask (porta interna — apenas localhost)
+        tcp dport $FLASK_PORT ip saddr 127.0.0.1 accept
+
+        # Log de drops (limite para não saturar o journal)
+        limit rate 5/minute log prefix "nft-cdpni-drop: " flags all drop
     }
 
     chain forward {
