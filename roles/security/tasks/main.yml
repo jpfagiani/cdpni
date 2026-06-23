@@ -107,7 +107,7 @@
       -keyout {{ ssl.key }}
       -out    {{ ssl.cert }}
       -subj   "/C={{ ssl.country }}/ST={{ ssl.state }}/O={{ ssl.org }}/CN={{ server.domain }}"
-      -addext "subjectAltName=DNS:{{ server.domain }},DNS:{{ server.hostname }},IP:{{ server.ip }}"
+      -addext "subjectAltName=DNS:{{ server.hostname }},DNS:{{ server.hostname }}.{{ server.domain }},DNS:{{ server.domain }},IP:{{ server.ip }}"
   args:
     creates: "{{ ssl.cert }}"
   notify: copy ca to webroot
