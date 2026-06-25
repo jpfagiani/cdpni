@@ -20,7 +20,7 @@
 
 - name: Criar usuário Linux por compartilhamento
   ansible.builtin.user:
-    name: "{{ item.name | lower }}"
+    name: "{{ item.user | default(item.name | lower) }}"
     comment: "{{ item.name | replace('_', ' ') }}"
     shell: /usr/sbin/nologin
     group: "{{ item.group | default('grp_' + (item.name | lower)) }}"
@@ -32,8 +32,8 @@
 - name: Registrar usuários dos compartilhamentos no Samba
   ansible.builtin.shell: |
     printf '%s\n%s\n' '{{ samba.default_pass }}' '{{ samba.default_pass }}' \
-      | smbpasswd -s -a {{ item.name | lower }} 2>/dev/null || true
-    smbpasswd -e {{ item.name | lower }} 2>/dev/null || true
+      | smbpasswd -s -a {{ item.user | default(item.name | lower) }} 2>/dev/null || true
+    smbpasswd -e {{ item.user | default(item.name | lower) }} 2>/dev/null || true
   loop: "{{ samba_shares }}"
   changed_when: false
   no_log: true
@@ -87,7 +87,7 @@
   ansible.builtin.file:
     path: "{{ raid.mount }}/shares/{{ item.name }}"
     state: directory
-    owner: "{{ item.name | lower }}"
+    owner: "{{ item.user | default(item.name | lower) }}"
     group: "{{ item.group | default('grp_' + (item.name | lower)) }}"
     mode: "0777"
   loop: "{{ samba_shares }}"

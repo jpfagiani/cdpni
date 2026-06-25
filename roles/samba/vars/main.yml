@@ -109,35 +109,36 @@ samba_supervisao_groups:
 # type: guest        → acesso livre sem senha, visível
 # type: guest_hidden → acesso livre sem senha, oculto
 # group: sobrescreve o grupo Linux/Samba (padrão: grp_<share.name | lower>)
+# user:  sobrescreve o usuário Linux/Samba (padrão: share.name | lower)
 samba_shares:
   - { name: Administrativo,    type: regular     }
   - { name: Aevp,              type: regular     }
   - { name: Almoxarifado,      type: regular     }
   - { name: Cadastro,          type: regular     }
   - { name: Canil,             type: regular     }
-  - { name: Chefia_Turno_I,    type: regular,    group: grp_chefia1   }
-  - { name: Chefia_Turno_II,   type: regular,    group: grp_chefia2   }
-  - { name: Chefia_Turno_III,  type: regular,    group: grp_chefia3   }
-  - { name: Chefia_Turno_IV,   type: regular,    group: grp_chefia4   }
+  - { name: Chefia_Turno_I,    type: regular,    group: grp_chefia1,   user: chefia1    }
+  - { name: Chefia_Turno_II,   type: regular,    group: grp_chefia2,   user: chefia2    }
+  - { name: Chefia_Turno_III,  type: regular,    group: grp_chefia3,   user: chefia3    }
+  - { name: Chefia_Turno_IV,   type: regular,    group: grp_chefia4,   user: chefia4    }
   - { name: Cipa,              type: regular     }
-  - { name: Conexao_Familiar,  type: regular,    group: grp_conexao   }
+  - { name: Conexao_Familiar,  type: regular,    group: grp_conexao,   user: conexao    }
   - { name: Csd,               type: regular     }
   - { name: Educacao,          type: regular     }
   - { name: Financas,          type: regular     }
   - { name: Inclusao,          type: regular     }
-  - { name: Infraestrutura,    type: regular,    group: grp_infra     }
-  - { name: Nucleo_de_Pessoal, type: regular,    group: grp_npessoal  }
+  - { name: Infraestrutura,    type: regular,    group: grp_infra,     user: infra      }
+  - { name: Nucleo_de_Pessoal, type: regular,    group: grp_npessoal,  user: npessoal   }
   - { name: Planilhas,         type: regular     }
-  - { name: Portaria_Turno_I,  type: regular,    group: grp_portaria1 }
-  - { name: Portaria_Turno_II, type: regular,    group: grp_portaria2 }
-  - { name: Portaria_Turno_III,type: regular,    group: grp_portaria3 }
-  - { name: Portaria_Turno_IV, type: regular,    group: grp_portaria4 }
-  - { name: Rol_de_Visitas,    type: regular,    group: grp_rol       }
+  - { name: Portaria_Turno_I,  type: regular,    group: grp_portaria1, user: portaria1  }
+  - { name: Portaria_Turno_II, type: regular,    group: grp_portaria2, user: portaria2  }
+  - { name: Portaria_Turno_III,type: regular,    group: grp_portaria3, user: portaria3  }
+  - { name: Portaria_Turno_IV, type: regular,    group: grp_portaria4, user: portaria4  }
+  - { name: Rol_de_Visitas,    type: regular,    group: grp_rol,       user: rol        }
   - { name: Saude,             type: regular     }
   - { name: Simic,             type: regular     }
   - { name: Sindicancia,       type: regular     }
   - { name: Supervisao,        type: regular     }
-  - { name: Diretoria_Geral,   type: restricted, group: grp_dg        }
+  - { name: Diretoria_Geral,   type: restricted, group: grp_dg,        user: dg         }
   - { name: Publico,           type: guest       }
   - { name: Scanner,           type: guest       }
   - { name: Papel_de_Parede,   type: guest       }

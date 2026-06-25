@@ -88,40 +88,40 @@ ansible-playbook -i inventory/hosts.ini site.yml --tags php_panel
 
 ### Lista de compartilhamentos
 
-| Compartilhamento | Grupo Linux | Tipo | Observação |
-|-----------------|-------------|------|------------|
-| Administrativo | grp_administrativo | regular | |
-| Aevp | grp_aevp | regular | |
-| Almoxarifado | grp_almoxarifado | regular | |
-| Cadastro | grp_cadastro | regular | |
-| Canil | grp_canil | regular | |
-| Chefia_Turno_I | grp_chefia1 | regular | |
-| Chefia_Turno_II | grp_chefia2 | regular | |
-| Chefia_Turno_III | grp_chefia3 | regular | |
-| Chefia_Turno_IV | grp_chefia4 | regular | |
-| Cipa | grp_cipa | regular | |
-| Conexao_Familiar | grp_conexao | regular | |
-| Csd | grp_csd | regular | |
-| Educacao | grp_educacao | regular | |
-| Financas | grp_financas | regular | |
-| Inclusao | grp_inclusao | regular | |
-| Infraestrutura | grp_infra | regular | |
-| Nucleo_de_Pessoal | grp_npessoal | regular | |
-| Planilhas | grp_planilhas | regular | |
-| Portaria_Turno_I | grp_portaria1 | regular | |
-| Portaria_Turno_II | grp_portaria2 | regular | |
-| Portaria_Turno_III | grp_portaria3 | regular | |
-| Portaria_Turno_IV | grp_portaria4 | regular | |
-| Rol_de_Visitas | grp_rol | regular | |
-| Saude | grp_saude | regular | |
-| Simic | grp_simic | regular | |
-| Sindicancia | grp_sindicancia | regular | |
-| Supervisao | grp_supervisao | regular | |
-| Diretoria_Geral | grp_dg | restricted | Sem acesso para supervisao |
-| Publico | grp_publico | guest | Sem senha |
-| Scanner | grp_scanner | guest | Sem senha |
-| Papel_de_Parede | grp_papel_de_parede | guest | Sem senha |
-| CPD | grp_cpd | guest_hidden | Sem senha, oculto na listagem |
+| Compartilhamento | Usuário Samba | Grupo Linux | Tipo | Observação |
+|-----------------|--------------|-------------|------|------------|
+| Administrativo | administrativo | grp_administrativo | regular | |
+| Aevp | aevp | grp_aevp | regular | |
+| Almoxarifado | almoxarifado | grp_almoxarifado | regular | |
+| Cadastro | cadastro | grp_cadastro | regular | |
+| Canil | canil | grp_canil | regular | |
+| Chefia_Turno_I | chefia1 | grp_chefia1 | regular | |
+| Chefia_Turno_II | chefia2 | grp_chefia2 | regular | |
+| Chefia_Turno_III | chefia3 | grp_chefia3 | regular | |
+| Chefia_Turno_IV | chefia4 | grp_chefia4 | regular | |
+| Cipa | cipa | grp_cipa | regular | |
+| Conexao_Familiar | conexao | grp_conexao | regular | |
+| Csd | csd | grp_csd | regular | |
+| Educacao | educacao | grp_educacao | regular | |
+| Financas | financas | grp_financas | regular | |
+| Inclusao | inclusao | grp_inclusao | regular | |
+| Infraestrutura | infra | grp_infra | regular | |
+| Nucleo_de_Pessoal | npessoal | grp_npessoal | regular | |
+| Planilhas | planilhas | grp_planilhas | regular | |
+| Portaria_Turno_I | portaria1 | grp_portaria1 | regular | |
+| Portaria_Turno_II | portaria2 | grp_portaria2 | regular | |
+| Portaria_Turno_III | portaria3 | grp_portaria3 | regular | |
+| Portaria_Turno_IV | portaria4 | grp_portaria4 | regular | |
+| Rol_de_Visitas | rol | grp_rol | regular | |
+| Saude | saude | grp_saude | regular | |
+| Simic | simic | grp_simic | regular | |
+| Sindicancia | sindicancia | grp_sindicancia | regular | |
+| Supervisao | supervisao | grp_supervisao | regular | |
+| Diretoria_Geral | dg | grp_dg | restricted | Sem acesso para supervisao |
+| Publico | publico | grp_publico | guest | Sem senha |
+| Scanner | scanner | grp_scanner | guest | Sem senha |
+| Papel_de_Parede | papel_de_parede | grp_papel_de_parede | guest | Sem senha |
+| CPD | cpd | grp_cpd | guest_hidden | Sem senha, oculto na listagem |
 
 ### Caminho dos arquivos no servidor
 
@@ -146,27 +146,44 @@ ansible-playbook -i inventory/hosts.ini site.yml --tags php_panel
 
 ### Usuários por compartilhamento
 
-Cada share tem um usuário Linux/Samba com nome em minúsculas (igual ao share) e um **grupo** com prefixo `grp_`:
+Cada share tem um usuário e um grupo Linux/Samba. Nos shares com nomes longos o usuário foi abreviado para facilitar o login:
 
-| Share | Usuário Linux | Grupo Linux |
+| Share | Usuário Samba | Grupo Linux |
 |-------|--------------|-------------|
 | Administrativo | administrativo | grp_administrativo |
-| Chefia_Turno_I | chefia_turno_i | grp_chefia1 |
-| Chefia_Turno_II | chefia_turno_ii | grp_chefia2 |
-| Chefia_Turno_III | chefia_turno_iii | grp_chefia3 |
-| Chefia_Turno_IV | chefia_turno_iv | grp_chefia4 |
-| Conexao_Familiar | conexao_familiar | grp_conexao |
-| Diretoria_Geral | diretoria_geral | grp_dg |
-| Infraestrutura | infraestrutura | grp_infra |
-| Nucleo_de_Pessoal | nucleo_de_pessoal | grp_npessoal |
-| Portaria_Turno_I | portaria_turno_i | grp_portaria1 |
-| Portaria_Turno_II | portaria_turno_ii | grp_portaria2 |
-| Portaria_Turno_III | portaria_turno_iii | grp_portaria3 |
-| Portaria_Turno_IV | portaria_turno_iv | grp_portaria4 |
-| Rol_de_Visitas | rol_de_visitas | grp_rol |
-| *(demais)* | `<share | lower>` | `grp_<share | lower>` |
+| Aevp | aevp | grp_aevp |
+| Almoxarifado | almoxarifado | grp_almoxarifado |
+| Cadastro | cadastro | grp_cadastro |
+| Canil | canil | grp_canil |
+| Chefia_Turno_I | **chefia1** | grp_chefia1 |
+| Chefia_Turno_II | **chefia2** | grp_chefia2 |
+| Chefia_Turno_III | **chefia3** | grp_chefia3 |
+| Chefia_Turno_IV | **chefia4** | grp_chefia4 |
+| Cipa | cipa | grp_cipa |
+| Conexao_Familiar | **conexao** | grp_conexao |
+| Csd | csd | grp_csd |
+| Educacao | educacao | grp_educacao |
+| Financas | financas | grp_financas |
+| Inclusao | inclusao | grp_inclusao |
+| Infraestrutura | **infra** | grp_infra |
+| Nucleo_de_Pessoal | **npessoal** | grp_npessoal |
+| Planilhas | planilhas | grp_planilhas |
+| Portaria_Turno_I | **portaria1** | grp_portaria1 |
+| Portaria_Turno_II | **portaria2** | grp_portaria2 |
+| Portaria_Turno_III | **portaria3** | grp_portaria3 |
+| Portaria_Turno_IV | **portaria4** | grp_portaria4 |
+| Rol_de_Visitas | **rol** | grp_rol |
+| Saude | saude | grp_saude |
+| Simic | simic | grp_simic |
+| Sindicancia | sindicancia | grp_sindicancia |
+| Supervisao | supervisao | grp_supervisao |
+| Diretoria_Geral | **dg** | grp_dg |
+| Publico | publico | grp_publico |
+| Scanner | scanner | grp_scanner |
+| Papel_de_Parede | papel_de_parede | grp_papel_de_parede |
+| CPD | cpd | grp_cpd |
 
-Esses usuários são para acesso direto ao compartilhamento específico.
+Para acessar uma pasta no Windows, use o usuário Samba da tabela acima com a senha definida no bootstrap.
 
 ### Gerenciar usuários via painel web
 
