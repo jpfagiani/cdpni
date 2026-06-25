@@ -251,8 +251,8 @@ renders={
         </tr>`).join('')}</tbody></table></div>`;
     }catch(e){$('ct').innerHTML=`<div class="empty"><span class="icon">⚠️</span>${esc(e.message)}</div>`;}
   },
-  audit: renders_audit.audit,
-  backup: renders_audit.backup,
+  audit: (...a) => renders_audit.audit(...a),
+  backup: (...a) => renders_audit.backup(...a),
   async shares(){
     try{
       const s=await api('list_shares');
