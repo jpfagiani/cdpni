@@ -23,7 +23,7 @@
     name: "{{ item.name | lower }}"
     comment: "{{ item.name | replace('_', ' ') }}"
     shell: /usr/sbin/nologin
-    group: "{{ item.name | lower }}"
+    group: "{{ item.group | default('grp_' + (item.name | lower)) }}"
     create_home: false
     password: "{{ samba.default_pass | password_hash('sha512') }}"
   loop: "{{ samba_shares }}"
@@ -88,7 +88,7 @@
     path: "{{ raid.mount }}/shares/{{ item.name }}"
     state: directory
     owner: "{{ item.name | lower }}"
-    group: "{{ item.name | lower }}"
+    group: "{{ item.group | default('grp_' + (item.name | lower)) }}"
     mode: "0777"
   loop: "{{ samba_shares }}"
 

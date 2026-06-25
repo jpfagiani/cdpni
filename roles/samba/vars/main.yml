@@ -1,142 +1,143 @@
 ---
-# Grupos do sistema — um por compartilhamento (nome = share em minúsculas)
+# Grupos do sistema — um por compartilhamento (prefixo grp_)
 samba_groups:
-  - administrativo
-  - aevp
-  - almoxarifado
-  - cadastro
-  - canil
-  - chefia_turno_i
-  - chefia_turno_ii
-  - chefia_turno_iii
-  - chefia_turno_iv
-  - cipa
-  - conexao_familiar
-  - cpd
-  - csd
-  - diretoria_geral
-  - educacao
-  - financas
-  - inclusao
-  - infraestrutura
-  - nucleo_de_pessoal
-  - papel_de_parede
-  - planilhas
-  - portaria_turno_i
-  - portaria_turno_ii
-  - portaria_turno_iii
-  - portaria_turno_iv
-  - publico
-  - rol_de_visitas
-  - saude
-  - scanner
-  - simic
-  - sindicancia
-  - supervisao
+  - grp_administrativo
+  - grp_aevp
+  - grp_almoxarifado
+  - grp_cadastro
+  - grp_canil
+  - grp_chefia1
+  - grp_chefia2
+  - grp_chefia3
+  - grp_chefia4
+  - grp_cipa
+  - grp_conexao
+  - grp_cpd
+  - grp_csd
+  - grp_dg
+  - grp_educacao
+  - grp_financas
+  - grp_inclusao
+  - grp_infra
+  - grp_npessoal
+  - grp_papel_de_parede
+  - grp_planilhas
+  - grp_portaria1
+  - grp_portaria2
+  - grp_portaria3
+  - grp_portaria4
+  - grp_publico
+  - grp_rol
+  - grp_saude
+  - grp_scanner
+  - grp_simic
+  - grp_sindicancia
+  - grp_supervisao
 
 # Todos os grupos (jpfagiani, rcborges, cpd)
 samba_all_groups:
-  - administrativo
-  - aevp
-  - almoxarifado
-  - cadastro
-  - canil
-  - chefia_turno_i
-  - chefia_turno_ii
-  - chefia_turno_iii
-  - chefia_turno_iv
-  - cipa
-  - conexao_familiar
-  - cpd
-  - csd
-  - diretoria_geral
-  - educacao
-  - financas
-  - inclusao
-  - infraestrutura
-  - nucleo_de_pessoal
-  - papel_de_parede
-  - planilhas
-  - portaria_turno_i
-  - portaria_turno_ii
-  - portaria_turno_iii
-  - portaria_turno_iv
-  - publico
-  - rol_de_visitas
-  - saude
-  - scanner
-  - simic
-  - sindicancia
-  - supervisao
+  - grp_administrativo
+  - grp_aevp
+  - grp_almoxarifado
+  - grp_cadastro
+  - grp_canil
+  - grp_chefia1
+  - grp_chefia2
+  - grp_chefia3
+  - grp_chefia4
+  - grp_cipa
+  - grp_conexao
+  - grp_cpd
+  - grp_csd
+  - grp_dg
+  - grp_educacao
+  - grp_financas
+  - grp_inclusao
+  - grp_infra
+  - grp_npessoal
+  - grp_papel_de_parede
+  - grp_planilhas
+  - grp_portaria1
+  - grp_portaria2
+  - grp_portaria3
+  - grp_portaria4
+  - grp_publico
+  - grp_rol
+  - grp_saude
+  - grp_scanner
+  - grp_simic
+  - grp_sindicancia
+  - grp_supervisao
 
-# Grupos do supervisao: todos exceto diretoria_geral
+# Grupos do supervisao: todos exceto grp_dg
 samba_supervisao_groups:
-  - administrativo
-  - aevp
-  - almoxarifado
-  - cadastro
-  - canil
-  - chefia_turno_i
-  - chefia_turno_ii
-  - chefia_turno_iii
-  - chefia_turno_iv
-  - cipa
-  - conexao_familiar
-  - cpd
-  - csd
-  - educacao
-  - financas
-  - inclusao
-  - infraestrutura
-  - nucleo_de_pessoal
-  - papel_de_parede
-  - planilhas
-  - portaria_turno_i
-  - portaria_turno_ii
-  - portaria_turno_iii
-  - portaria_turno_iv
-  - publico
-  - rol_de_visitas
-  - saude
-  - scanner
-  - simic
-  - sindicancia
-  - supervisao
+  - grp_administrativo
+  - grp_aevp
+  - grp_almoxarifado
+  - grp_cadastro
+  - grp_canil
+  - grp_chefia1
+  - grp_chefia2
+  - grp_chefia3
+  - grp_chefia4
+  - grp_cipa
+  - grp_conexao
+  - grp_cpd
+  - grp_csd
+  - grp_educacao
+  - grp_financas
+  - grp_inclusao
+  - grp_infra
+  - grp_npessoal
+  - grp_papel_de_parede
+  - grp_planilhas
+  - grp_portaria1
+  - grp_portaria2
+  - grp_portaria3
+  - grp_portaria4
+  - grp_publico
+  - grp_rol
+  - grp_saude
+  - grp_scanner
+  - grp_simic
+  - grp_sindicancia
+  - grp_supervisao
 
 # Compartilhamentos
 # type: regular      → grupo + jpfagiani + rcborges + supervisao + admin
 # type: restricted   → grupo + jpfagiani + rcborges + admin (SEM supervisao)
 # type: guest        → acesso livre sem senha, visível
 # type: guest_hidden → acesso livre sem senha, oculto
+# group: sobrescreve o grupo Linux/Samba (padrão: grp_<share.name | lower>)
 samba_shares:
   - { name: Administrativo,    type: regular     }
   - { name: Aevp,              type: regular     }
   - { name: Almoxarifado,      type: regular     }
   - { name: Cadastro,          type: regular     }
   - { name: Canil,             type: regular     }
-  - { name: Chefia_Turno_I,    type: regular     }
-  - { name: Chefia_Turno_II,   type: regular     }
-  - { name: Chefia_Turno_III,  type: regular     }
-  - { name: Chefia_Turno_IV,   type: regular     }
+  - { name: Chefia_Turno_I,    type: regular,    group: grp_chefia1   }
+  - { name: Chefia_Turno_II,   type: regular,    group: grp_chefia2   }
+  - { name: Chefia_Turno_III,  type: regular,    group: grp_chefia3   }
+  - { name: Chefia_Turno_IV,   type: regular,    group: grp_chefia4   }
   - { name: Cipa,              type: regular     }
-  - { name: Conexao_Familiar,  type: regular     }
+  - { name: Conexao_Familiar,  type: regular,    group: grp_conexao   }
   - { name: Csd,               type: regular     }
   - { name: Educacao,          type: regular     }
   - { name: Financas,          type: regular     }
   - { name: Inclusao,          type: regular     }
-  - { name: Infraestrutura,    type: regular     }
-  - { name: Nucleo_de_Pessoal, type: regular     }
+  - { name: Infraestrutura,    type: regular,    group: grp_infra     }
+  - { name: Nucleo_de_Pessoal, type: regular,    group: grp_npessoal  }
   - { name: Planilhas,         type: regular     }
-  - { name: Portaria_Turno_I,  type: regular     }
-  - { name: Portaria_Turno_II, type: regular     }
-  - { name: Portaria_Turno_III,type: regular     }
-  - { name: Portaria_Turno_IV, type: regular     }
-  - { name: Rol_de_Visitas,    type: regular     }
+  - { name: Portaria_Turno_I,  type: regular,    group: grp_portaria1 }
+  - { name: Portaria_Turno_II, type: regular,    group: grp_portaria2 }
+  - { name: Portaria_Turno_III,type: regular,    group: grp_portaria3 }
+  - { name: Portaria_Turno_IV, type: regular,    group: grp_portaria4 }
+  - { name: Rol_de_Visitas,    type: regular,    group: grp_rol       }
   - { name: Saude,             type: regular     }
   - { name: Simic,             type: regular     }
   - { name: Sindicancia,       type: regular     }
   - { name: Supervisao,        type: regular     }
-  - { name: Diretoria_Geral,   type: restricted  }
+  - { name: Diretoria_Geral,   type: restricted, group: grp_dg        }
   - { name: Publico,           type: guest       }
   - { name: Scanner,           type: guest       }
   - { name: Papel_de_Parede,   type: guest       }
@@ -147,21 +148,21 @@ samba_users:
   # Administradores com acesso total
   - login: jpfagiani
     fullname: "JP Fagiani"
-    primary: cpd
+    primary: grp_cpd
     groups: "{{ samba_all_groups | join(',') }}"
 
   - login: rcborges
     fullname: "RC Borges"
-    primary: cpd
+    primary: grp_cpd
     groups: "{{ samba_all_groups | join(',') }}"
 
   - login: cpd
     fullname: "CPD Administrador"
-    primary: cpd
+    primary: grp_cpd
     groups: "{{ samba_all_groups | join(',') }}"
 
   # Supervisão — acesso total exceto Diretoria_Geral
   - login: supervisao
     fullname: "Supervisao"
-    primary: supervisao
+    primary: grp_supervisao
     groups: "{{ samba_supervisao_groups | join(',') }}"

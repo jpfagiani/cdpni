@@ -69,7 +69,7 @@
     browseable  = no
 
 {% for share in samba_shares %}
-{% set grp = share.name | lower %}
+{% set grp = share.group | default("grp_" + (share.name | lower)) %}
 {% set share_path = raid.mount + '/shares/' + share.name %}
 
 [{{ share.name }}]
