@@ -108,12 +108,24 @@
       {{ raid.mount }}/shares /etc/samba/smb.conf 2>/dev/null &&
       find /backup/samba -name 'backup_*.tar.gz' -mtime +7 -delete
 
+- name: Garantir que /etc/sudoers.d existe
+  ansible.builtin.file:
+    path: /etc/sudoers.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
 - name: Permissão sudoers para www-data executar backup
   ansible.builtin.lineinfile:
     path: /etc/sudoers.d/cdpni-panel
     line: "www-data ALL=(root) NOPASSWD: /bin/tar, /usr/bin/find"
     regexp: '/bin/tar'
     state: present
+    create: true
+    owner: root
+    group: root
+    mode: "0440"
     validate: visudo -cf %s
 
 - name: Habilitar PHP-FPM e Nginx
