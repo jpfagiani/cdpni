@@ -158,15 +158,16 @@ const pages={
   audit:{title:'Auditoria',action:{label:'⬇ Exportar CSV',fn:'exportAudit'}},
   backup:{title:'Backup',action:null}
 };
+let renders;
 function goto(page){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.getAttribute('onclick')?.includes(`'${page}'`)));
   const p=pages[page];$('pT').textContent=p.title;
   const btn=$('tA');
   if(p.action){btn.style.display='';btn.textContent=p.action.label;btn.onclick=()=>window[p.action.fn]();}
   else btn.style.display='none';
-  renders[page]?.();
+  renders?.[page]?.();
 }
-const renders={
+renders={
   async dashboard(){
     try{
       const [s,conns,acc]=await Promise.all([api('status'),api('live_connections'),api('recent_access')]);
