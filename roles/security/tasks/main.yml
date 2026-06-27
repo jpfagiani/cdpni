@@ -66,7 +66,10 @@
     dest: /etc/fail2ban/filter.d/cdpni-portal.conf
     content: |
       [Definition]
-      failregex = .* - - \[.*\] "POST /login HTTP.* 200
+      # Detecta POST /login com resposta 200 contendo "inválidos" (login falhou mas retornou 200)
+      # ou respostas 4xx diretas de autenticação
+      failregex = ^<HOST> .* "POST /login HTTP/.*" 200 .*$
+      ignoreregex = ^<HOST> .* "POST /login HTTP/.*" 30[12] .*$
     mode: "0644"
   notify: restart fail2ban
 

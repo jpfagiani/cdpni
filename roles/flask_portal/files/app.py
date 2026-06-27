@@ -20,9 +20,15 @@ os.makedirs(BANNER_DIR, exist_ok=True)
 # ── helpers ──────────────────────────────────────────────────────────────────
 def safe_path(disk: str, rel: str = '') -> Path:
     """Resolve e valida caminho dentro do share — evita path traversal."""
-    base = Path(SAMBA_ROOT) / secure_filename(disk)
-    target = (base / rel).resolve()
-    if not str(target).startswith(str(base.resolve())):
+    base = (Path(SAMBA_ROOT) / secure_filename(disk)).resolve()
+    if rel:
+        # Sanitiza cada componente do caminho relativo individualmente
+        parts = [secure_filename(p) for p in Path(rel).parts if p not in ('', '.', '..')]
+        target = base.joinpath(*parts).resolve() if parts else base
+    else:
+        target = base
+    # Verifica que target está dentro de base (com separador para evitar prefix clash)
+    if not str(target).startswith(str(base) + os.sep) and target != base:
         abort(403)
     return target
 
@@ -570,8 +576,8 @@ def change_pass():
     if not p.authenticate(user, current_pass):
         flash('Senha atual incorreta', 'error')
         return redirect(url_for('admin'))
-    if len(new_pass) < 6:
-        flash('Mínimo 6 caracteres', 'error')
+    if len(new_pass) < 8:
+        flash('Mínimo 8 caracteres', 'error')
         return redirect(url_for('admin'))
     if new_pass != confirm:
         flash('Senhas não coincidem', 'error')
@@ -655,8 +661,8 @@ def admin_user_pass(username):
     confirm     = request.form.get('confirm_pass', '')
     if not username or not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
         return jsonify({'ok': False, 'error': 'Usuário inválido'})
-    if len(new_pass) < 4:
-        return jsonify({'ok': False, 'error': 'Mínimo 4 caracteres'})
+    if len(new_pass) < 8:
+        return jsonify({'ok': False, 'error': 'Mínimo 8 caracteres'})
     if new_pass != confirm:
         return jsonify({'ok': False, 'error': 'Senhas não coincidem'})
     proc = subprocess.run(

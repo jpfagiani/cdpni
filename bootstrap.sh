@@ -193,6 +193,7 @@ valid_pass() {
     [[ "$p" =~ [A-Z] ]] || return 1
     [[ "$p" =~ [a-z] ]] || return 1
     [[ "$p" =~ [0-9] ]] || return 1
+    [[ "$p" =~ [^a-zA-Z0-9] ]] || return 1
     return 0
 }
 
@@ -247,12 +248,12 @@ done
 
 # Senha do Samba (digitada, não exibida)
 echo ""
-echo -e "  ${DIM}Requisitos: mínimo 8 caracteres, letras maiúsculas, minúsculas e números.${NC}"
+echo -e "  ${DIM}Requisitos: mínimo 8 caracteres, maiúsculas, minúsculas, números e símbolo especial.${NC}"
 while true; do
     ask "Senha padrão dos usuários Samba:"
     read -rsp "  > " SAMBA_PASS; echo ""
     if ! valid_pass "$SAMBA_PASS"; then
-        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc. e número."
+        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc., número e símbolo (!@#\$...)."
         continue
     fi
     ask "Confirme a senha:"
@@ -268,7 +269,7 @@ while true; do
     ask "Senha do painel web (admin) [porta 8443]:"
     read -rsp "  > " PANEL_PASS; echo ""
     if ! valid_pass "$PANEL_PASS"; then
-        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc. e número."
+        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc., número e símbolo (!@#\$...)."
         continue
     fi
     ask "Confirme a senha:"
@@ -382,6 +383,7 @@ samba:
   workgroup:    "WORKGROUP"
   default_pass: "${SAMBA_PASS}"
   log_dir:      /var/log/samba
+  extra_admins: []
 
 portal:
   dir:  /opt/cdpni-portal
@@ -412,6 +414,18 @@ step "Executando Ansible playbook"
 echo ""
 
 cd "${SCRIPT_DIR}"
+# Configura rotação do log do Ansible
+cat > /etc/logrotate.d/cdpni-ansible << 'LOGROTATE'
+/var/log/cdpni_ansible.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+}
+LOGROTATE
+
 ansible-playbook -i inventory/hosts.ini site.yml \
     --diff \
     2>&1 | tee /var/log/cdpni_ansible.log

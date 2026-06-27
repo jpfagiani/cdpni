@@ -11,7 +11,7 @@
     map to guest         = bad user
 
     # Administradores Samba — bypass de permissões de share
-    admin users          = {{ server.admin_user }} jpfagiani cpd
+    admin users          = {{ server.admin_user }}{% for u in samba.extra_admins %} {{ u }}{% endfor %}
 
     interfaces           = lo {{ server.iface }}
     bind interfaces only = yes
@@ -33,9 +33,9 @@
     log level            = 1 auth:2
 
     create mask          = 0664
-    directory mask       = 0777
+    directory mask       = 0750
     force create mode    = 0664
-    force directory mode = 0777
+    force directory mode = 0750
 
     load printers        = no
     printing             = bsd
@@ -64,7 +64,7 @@
 [Recycle]
     comment     = Lixeira
     path        = {{ raid.mount }}/recycle
-    valid users = {{ server.admin_user }} jpfagiani cpd
+    valid users = {{ server.admin_user }}{% for u in samba.extra_admins %} {{ u }}{% endfor %}
     writable    = no
     browseable  = no
 
@@ -86,10 +86,12 @@
     public               = yes
 {% elif share.type == 'restricted' %}
     guest ok             = no
-    valid users          = @{{ grp }} jpfagiani rcborges {{ server.admin_user }}
+    valid users          = @{{ grp }} {{ server.admin_user }}{% for u in samba.extra_admins %} {{ u }}{% endfor %}
+
 {% else %}
     guest ok             = no
-    valid users          = @{{ grp }} jpfagiani rcborges supervisao {{ server.admin_user }}
+    valid users          = @{{ grp }} supervisao {{ server.admin_user }}{% for u in samba.extra_admins %} {{ u }}{% endfor %}
+
 {% endif %}
 
 {% endfor %}

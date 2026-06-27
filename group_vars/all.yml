@@ -30,6 +30,9 @@ samba:
   workgroup:    "WORKGROUP"
   default_pass: "ALTERAR_NO_BOOTSTRAP"
   log_dir:      /var/log/samba
+  # Usuários com bypass de permissão no Samba (admin users)
+  # Populado dinamicamente pelo bootstrap — não editar manualmente
+  extra_admins: []
 
 portal:
   dir:  /opt/cdpni-portal
