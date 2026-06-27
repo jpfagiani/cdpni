@@ -39,9 +39,6 @@
     - role: security
       tags: [security, firewall]
 
-    - role: php_panel
-      tags: [panel, php]
-
     - role: flask_portal
       tags: [portal, flask]
 
@@ -52,12 +49,10 @@
           - "======================================================"
           - "  INSTALAÇÃO CONCLUÍDA"
           - "======================================================"
-          - "  Portal de arquivos : https://{{ server.ip }}"
-          - "  Painel admin Samba : https://{{ server.ip }}:8443"
-          - "  Acesso SMB         : \\\\{{ server.ip }}"
+          - "  Portal (arquivos + admin) : https://{{ server.ip }}:8443"
+          - "  Acesso SMB               : \\\\{{ server.ip }}"
           - "------------------------------------------------------"
-          - "  Samba/Portal : {{ server.admin_user }} / 1234  ⚠ TROCAR"
-          - "  Painel Admin : admin / admin              ⚠ TROCAR"
+          - "  Login portal : {{ server.admin_user }} / (senha definida no bootstrap)"
           - "------------------------------------------------------"
           - "  CA para navegador  : https://{{ server.ip }}/cdpni-ca.crt"
           - "  RAID sincronizando : watch cat /proc/mdstat"
