@@ -1,6 +1,7 @@
-import os, re, shutil, subprocess, mimetypes, hashlib
+import os, re, shutil, subprocess, mimetypes, hashlib, json, time
 from pathlib import Path
 from functools import wraps
+from datetime import datetime
 
 import pam
 from flask import (Flask, render_template_string, request, session,
@@ -15,39 +16,36 @@ SAMBA_ROOT   = app.config['SAMBA_ROOT']
 ADMIN_USERS  = set(app.config['ADMIN_USERS'])
 PORTAL_DIR   = os.path.dirname(os.path.abspath(__file__))
 BANNER_DIR   = os.path.join(PORTAL_DIR, 'banners')
+SMB_CONF     = '/etc/samba/smb.conf'
+BACKUP_DIR   = app.config.get('BACKUP_DIR', '/opt/backups')
 os.makedirs(BANNER_DIR, exist_ok=True)
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 def safe_path(disk: str, rel: str = '') -> Path:
-    """Resolve e valida caminho dentro do share — evita path traversal."""
     base = (Path(SAMBA_ROOT) / secure_filename(disk)).resolve()
     if rel:
-        # Sanitiza cada componente do caminho relativo individualmente
         parts = [secure_filename(p) for p in Path(rel).parts if p not in ('', '.', '..')]
         target = base.joinpath(*parts).resolve() if parts else base
     else:
         target = base
-    # Verifica que target está dentro de base (com separador para evitar prefix clash)
     if not str(target).startswith(str(base) + os.sep) and target != base:
         abort(403)
     return target
 
 def user_disks() -> list[str]:
-    user   = session.get('user', '')
-    groups = session.get('groups', [])
-    disks  = []
+    user = session.get('user', '')
     if user in ADMIN_USERS:
         try:
-            return sorted(
-                d.name for d in Path(SAMBA_ROOT).iterdir() if d.is_dir()
-            )
+            return sorted(d.name for d in Path(SAMBA_ROOT).iterdir() if d.is_dir())
         except Exception:
             return []
-    for d in Path(SAMBA_ROOT).iterdir():
-        if not d.is_dir():
-            continue
-        if os.access(str(d), os.R_OK):
-            disks.append(d.name)
+    disks = []
+    try:
+        for d in Path(SAMBA_ROOT).iterdir():
+            if d.is_dir() and os.access(str(d), os.R_OK):
+                disks.append(d.name)
+    except Exception:
+        pass
     return sorted(disks)
 
 def login_required(f):
@@ -82,319 +80,391 @@ def get_banner() -> str:
             return url_for('banner_img', filename=f'banner.{ext}')
     return ''
 
-# ── templates ─────────────────────────────────────────────────────────────────
-BASE = r"""
-<!DOCTYPE html><html lang="pt-BR">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CDPNI — Arquivos</title>
-<style>
-:root{--bg:#0d1b2e;--bg2:#112240;--bg3:#163052;--border:#1e4070;--text:#d4e8f8;
-      --muted:#5a8ab4;--accent:#3a8fff;--danger:#ff5a5a;--success:#3fd87a;
-      --font:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-      --mono:'Consolas','Courier New',monospace}
+def run(cmd: list, input_: str | None = None) -> tuple[int, str, str]:
+    proc = subprocess.run(cmd, input=input_, capture_output=True, text=True)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+def get_system_users() -> list[dict]:
+    users = []
+    try:
+        with open('/etc/passwd') as f:
+            for line in f:
+                parts = line.strip().split(':')
+                if len(parts) < 7:
+                    continue
+                uid = int(parts[2])
+                if uid < 1000 or uid > 60000:
+                    continue
+                shell = parts[6]
+                if shell in ('/usr/sbin/nologin', '/bin/false', '/sbin/nologin'):
+                    continue
+                users.append({'name': parts[0], 'uid': uid, 'home': parts[5], 'shell': shell})
+    except Exception:
+        pass
+    return sorted(users, key=lambda u: u['name'])
+
+def get_system_groups() -> list[dict]:
+    groups = []
+    sys_users = {u['name'] for u in get_system_users()}
+    try:
+        with open('/etc/group') as f:
+            for line in f:
+                parts = line.strip().split(':')
+                if len(parts) < 4:
+                    continue
+                gid = int(parts[2])
+                if gid < 1000 or gid > 60000:
+                    continue
+                members = [m for m in parts[3].split(',') if m and m in sys_users]
+                groups.append({'name': parts[0], 'gid': gid, 'members': members})
+    except Exception:
+        pass
+    return sorted(groups, key=lambda g: g['name'])
+
+def parse_smb_shares() -> list[dict]:
+    shares = []
+    current = None
+    try:
+        with open(SMB_CONF) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('[') and line.endswith(']'):
+                    name = line[1:-1]
+                    if name not in ('global', 'homes', 'printers', 'print$'):
+                        current = {'name': name, 'path': '', 'comment': '',
+                                   'valid_users': '', 'read_only': 'yes',
+                                   'browseable': 'yes', 'create_mask': '0664',
+                                   'directory_mask': '0775'}
+                        shares.append(current)
+                    else:
+                        current = None
+                elif current and '=' in line and not line.startswith('#') and not line.startswith(';'):
+                    k, _, v = line.partition('=')
+                    k = k.strip().lower().replace(' ', '_')
+                    current[k] = v.strip()
+    except Exception:
+        pass
+    return shares
+
+def get_mdstat() -> dict:
+    info = {'arrays': [], 'raw': ''}
+    try:
+        with open('/proc/mdstat') as f:
+            raw = f.read()
+        info['raw'] = raw
+        current_array = None
+        for line in raw.splitlines():
+            line = line.strip()
+            if line.startswith('md'):
+                m = re.match(r'^(md\w+)\s*:\s*(\w+)\s+(\w+)\s+(.+)', line)
+                if m:
+                    current_array = {
+                        'name': m.group(1),
+                        'status': m.group(2),
+                        'level': m.group(3),
+                        'devices': m.group(4),
+                        'progress': '',
+                        'health': 'ok'
+                    }
+                    info['arrays'].append(current_array)
+            elif current_array and 'blocks' in line:
+                if 'degraded' in line.lower() or 'failed' in line.lower():
+                    current_array['health'] = 'degraded'
+                m_prog = re.search(r'(\d+)%', line)
+                if m_prog:
+                    current_array['progress'] = m_prog.group(1) + '%'
+    except Exception:
+        pass
+    return info
+
+def get_disk_usage() -> list[dict]:
+    disks = []
+    try:
+        rc, out, _ = run(['df', '-h', '--output=source,size,used,avail,pcent,target',
+                          '--exclude-type=tmpfs', '--exclude-type=devtmpfs'])
+        for line in out.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) >= 6:
+                src = parts[0]
+                if src.startswith('/dev') or src.startswith('//'):
+                    disks.append({
+                        'source': src, 'size': parts[1], 'used': parts[2],
+                        'avail': parts[3], 'pct': parts[4].rstrip('%'),
+                        'mount': parts[5]
+                    })
+    except Exception:
+        pass
+    return disks
+
+def get_memory() -> dict:
+    info = {'total': 0, 'used': 0, 'avail': 0, 'pct': 0, 'total_h': '—', 'used_h': '—'}
+    try:
+        with open('/proc/meminfo') as f:
+            for line in f:
+                k, v = line.split(':', 1)
+                k = k.strip()
+                v = int(v.strip().split()[0])
+                if k == 'MemTotal':
+                    info['total'] = v
+                elif k == 'MemAvailable':
+                    info['avail'] = v
+        info['used'] = info['total'] - info['avail']
+        info['pct'] = round(info['used'] / info['total'] * 100) if info['total'] else 0
+        info['total_h'] = fmt_size(info['total'] * 1024)
+        info['used_h'] = fmt_size(info['used'] * 1024)
+    except Exception:
+        pass
+    return info
+
+def get_cpu() -> dict:
+    info = {'pct': 0, 'cores': 0}
+    try:
+        with open('/proc/cpuinfo') as f:
+            info['cores'] = f.read().count('processor')
+        rc, out, _ = run(['top', '-bn1', '-1'])
+        for line in out.splitlines():
+            if 'Cpu(s)' in line or line.startswith('%Cpu'):
+                m = re.search(r'(\d+[\.,]\d+)\s+id', line)
+                if m:
+                    info['pct'] = round(100 - float(m.group(1).replace(',', '.')))
+                    break
+    except Exception:
+        pass
+    return info
+
+def get_uptime() -> str:
+    try:
+        with open('/proc/uptime') as f:
+            secs = float(f.read().split()[0])
+        days = int(secs // 86400)
+        hours = int((secs % 86400) // 3600)
+        mins = int((secs % 3600) // 60)
+        parts = []
+        if days:
+            parts.append(f'{days}d')
+        if hours:
+            parts.append(f'{hours}h')
+        parts.append(f'{mins}min')
+        return ' '.join(parts)
+    except Exception:
+        return '—'
+
+def get_samba_connections() -> list[dict]:
+    conns = []
+    try:
+        rc, out, _ = run(['sudo', 'smbstatus', '--brief'])
+        for line in out.splitlines():
+            if re.match(r'^\d+\s+', line):
+                parts = line.split()
+                if len(parts) >= 4:
+                    conns.append({
+                        'pid': parts[0], 'user': parts[1],
+                        'group': parts[2], 'machine': parts[3],
+                        'since': ' '.join(parts[4:]) if len(parts) > 4 else ''
+                    })
+    except Exception:
+        pass
+    return conns
+
+def get_samba_logs(lines: int = 100) -> str:
+    log_paths = [
+        '/var/log/samba/log.smbd',
+        '/var/log/samba/log.nmbd',
+        '/var/log/samba/audit.log',
+    ]
+    result = []
+    for p in log_paths:
+        if os.path.exists(p):
+            try:
+                rc, out, _ = run(['sudo', 'tail', f'-n{lines}', p])
+                if out:
+                    result.append(f'=== {p} ===\n{out}')
+            except Exception:
+                pass
+    return '\n\n'.join(result) if result else '(sem logs disponíveis)'
+
+def get_backups() -> list[dict]:
+    backups = []
+    try:
+        p = Path(BACKUP_DIR)
+        if p.exists():
+            for f in sorted(p.glob('*.tar.gz'), key=lambda x: x.stat().st_mtime, reverse=True)[:30]:
+                st = f.stat()
+                backups.append({
+                    'name': f.name,
+                    'size': fmt_size(st.st_size),
+                    'date': datetime.fromtimestamp(st.st_mtime).strftime('%d/%m/%Y %H:%M'),
+                })
+    except Exception:
+        pass
+    return backups
+
+# ── CSS ───────────────────────────────────────────────────────────────────────
+CSS = r"""
+:root{
+  --bg:#0d1b2e;--bg2:#112240;--bg3:#163052;--bg4:#1a3a5c;
+  --border:#1e4070;--text:#d4e8f8;--muted:#5a8ab4;
+  --accent:#3a8fff;--danger:#ff5a5a;--success:#3fd87a;--warn:#f5a623;
+  --font:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --mono:'Consolas','Courier New',monospace;
+  --sidebar:220px
+}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:.6rem 1.5rem;
-        display:flex;align-items:center;gap:1rem}
-.topbar-logo{font-weight:700;font-size:1.1rem;color:var(--text)}
-.topbar-logo small{color:var(--muted);font-weight:400;font-size:.75rem;margin-left:.4rem}
-.topbar-right{margin-left:auto;display:flex;align-items:center;gap:.75rem;font-size:.85rem;color:var(--muted)}
-.banner{max-height:200px;width:100%;object-fit:cover;display:block}
-.content{max-width:1200px;margin:1.5rem auto;padding:0 1.5rem}
-.breadcrumb{font-size:.8rem;color:var(--muted);margin-bottom:1rem}
-.breadcrumb a{color:var(--muted)}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:.55rem 1.25rem;display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:50;flex-shrink:0}
+.topbar-logo{font-weight:700;font-size:1rem;color:var(--text);white-space:nowrap}
+.topbar-logo span{color:var(--accent)}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:.6rem;font-size:.82rem}
+.topbar-user{color:var(--muted)}
+.layout{display:flex;flex:1;overflow:hidden}
+.sidebar{width:var(--sidebar);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.sidebar-section{padding:.75rem .75rem .25rem;font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.sidebar a{display:flex;align-items:center;gap:.55rem;padding:.45rem .75rem;color:var(--text);font-size:.82rem;border-radius:6px;margin:.05rem .4rem;transition:background .12s}
+.sidebar a:hover,.sidebar a.active{background:var(--bg3);text-decoration:none}
+.sidebar a.active{color:var(--accent);font-weight:600}
+.sidebar-icon{width:18px;text-align:center;font-size:.95rem;flex-shrink:0}
+.main{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
+.banner{max-height:160px;width:100%;object-fit:cover;display:block;flex-shrink:0}
+.page-title{font-size:1.1rem;font-weight:700;margin-bottom:1.25rem;display:flex;align-items:center;gap:.5rem}
+.page-title small{font-size:.78rem;font-weight:400;color:var(--muted)}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem;margin-bottom:1.25rem}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.85rem 1rem}
+.stat-card .label{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.3rem}
+.stat-card .value{font-size:1.4rem;font-weight:700;line-height:1}
+.stat-card .sub{font-size:.72rem;color:var(--muted);margin-top:.25rem}
+.stat-ok{color:var(--success)}.stat-warn{color:var(--warn)}.stat-err{color:var(--danger)}
+.progress{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-top:.4rem}
+.progress-bar{height:100%;border-radius:3px;background:var(--accent);transition:width .3s}
+.progress-bar.warn{background:var(--warn)}.progress-bar.err{background:var(--danger)}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:1rem}
-.card-header{padding:.6rem 1rem;border-bottom:1px solid var(--border);background:var(--bg3);
-             display:flex;align-items:center;gap:.5rem}
-.card-header h3{font-size:.9rem;font-weight:600;flex:1}
-table{width:100%;border-collapse:collapse;font-size:.85rem}
-th{padding:.5rem 1rem;text-align:left;font-size:.72rem;font-weight:600;text-transform:uppercase;
-   letter-spacing:.05em;color:var(--muted);background:var(--bg3);border-bottom:1px solid var(--border)}
-td{padding:.6rem 1rem;border-bottom:1px solid var(--border);vertical-align:middle}
+.card-header{padding:.6rem 1rem;border-bottom:1px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:.5rem}
+.card-header h3{font-size:.88rem;font-weight:600;flex:1}
+.card-body{padding:1rem}
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{padding:.45rem .9rem;text-align:left;font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--bg3);border-bottom:1px solid var(--border)}
+td{padding:.5rem .9rem;border-bottom:1px solid var(--border);vertical-align:middle}
 tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)}
-.icon{margin-right:.35rem}
-.btn{padding:.35rem .8rem;border-radius:6px;border:1px solid var(--border);background:var(--bg3);
-     color:var(--text);cursor:pointer;font-size:.78rem;font-family:var(--font);display:inline-flex;
-     align-items:center;gap:.3rem;text-decoration:none}
-.btn:hover{background:var(--bg2);text-decoration:none}
-.btn-primary{background:#1a5fbf;border-color:#2470d0;color:#fff}
-.btn-primary:hover{background:#2470d0}
-.btn-danger{border-color:var(--danger);color:var(--danger)}
-.btn-sm{padding:.2rem .5rem;font-size:.75rem}
-.actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem}
-.disks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem}
-.disk-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:1rem;
-           cursor:pointer;transition:border-color .15s}
-.disk-card:hover{border-color:var(--accent)}
-.disk-card .di{font-size:2rem;margin-bottom:.4rem}
-.disk-card h4{font-size:.9rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.disk-card small{color:var(--muted);font-size:.75rem}
-.flash{padding:.6rem 1rem;border-radius:6px;margin-bottom:1rem;font-size:.85rem}
+.badge{display:inline-block;padding:.1rem .45rem;border-radius:4px;font-size:.68rem;font-weight:600}
+.badge-ok{background:#0a2518;border:1px solid #1a4a30;color:var(--success)}
+.badge-warn{background:#2a1e00;border:1px solid #4a3800;color:var(--warn)}
+.badge-err{background:#2a0f0f;border:1px solid #4a1f1f;color:var(--danger)}
+.badge-info{background:#0a1e38;border:1px solid #1a3a60;color:var(--accent)}
+.btn{padding:.32rem .75rem;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);cursor:pointer;font-size:.76rem;font-family:var(--font);display:inline-flex;align-items:center;gap:.3rem;text-decoration:none;transition:background .12s}
+.btn:hover{background:var(--bg4);text-decoration:none}
+.btn-primary{background:#1a5fbf;border-color:#2470d0;color:#fff}.btn-primary:hover{background:#2470d0}
+.btn-danger{border-color:var(--danger);color:var(--danger)}.btn-danger:hover{background:#2a0f0f}
+.btn-sm{padding:.2rem .5rem;font-size:.72rem}.btn-xs{padding:.1rem .35rem;font-size:.68rem}
+.actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center}
+.flash{padding:.55rem .9rem;border-radius:6px;margin-bottom:1rem;font-size:.82rem}
 .flash-success{background:#0a2518;border:1px solid #1a4a30;color:var(--success)}
 .flash-error{background:#2a0f0f;border:1px solid #4a1f1f;color:var(--danger)}
-input[type=text],input[type=password],input[type=file],select{
-  background:var(--bg);border:1px solid var(--border);border-radius:6px;
-  padding:.4rem .75rem;font-size:.85rem;color:var(--text);width:100%;
-  font-family:var(--font);outline:none}
-input:focus,select:focus{border-color:var(--accent)}
-.form-group{margin-bottom:.8rem}
-.form-group label{display:block;font-size:.8rem;color:var(--muted);margin-bottom:.3rem}
-.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
-          backdrop-filter:blur(4px);z-index:100;align-items:center;justify-content:center}
+.flash-warning{background:#2a1e00;border:1px solid #4a3800;color:var(--warn)}
+input[type=text],input[type=password],input[type=file],select,textarea{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.38rem .7rem;font-size:.82rem;color:var(--text);width:100%;font-family:var(--font);outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+.form-group{margin-bottom:.75rem}.form-group label{display:block;font-size:.76rem;color:var(--muted);margin-bottom:.25rem}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);z-index:100;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
-.modal{background:var(--bg2);border:1px solid var(--border);border-radius:10px;
-       padding:1.25rem;width:420px;max-width:95vw}
-.modal h3{font-size:.95rem;margin-bottom:1rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)}
-.modal-footer{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;
-              padding-top:.6rem;border-top:1px solid var(--border)}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;width:460px;max-width:96vw;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:.92rem;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:1px solid var(--border)}
+.modal-footer{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;padding-top:.5rem;border-top:1px solid var(--border)}
 .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh}
 .login-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:320px;overflow:hidden}
 .login-header{background:var(--bg3);border-bottom:1px solid var(--border);padding:1.25rem;text-align:center}
-.login-header .logo{width:48px;height:48px;background:linear-gradient(135deg,#1a5fbf,#3a8fff);
-                    border-radius:12px;display:grid;place-items:center;font-size:22px;
-                    margin:0 auto .5rem}
-.login-body{padding:1.25rem;display:flex;flex-direction:column;gap:.75rem}
-.error-msg{font-size:.8rem;color:var(--danger);padding:.5rem .75rem;background:#2a0f0f;
-           border:1px solid #4a1f1f;border-radius:6px}
-</style>
-</head>
+.login-header .logo{width:48px;height:48px;background:linear-gradient(135deg,#1a5fbf,#3a8fff);border-radius:12px;display:grid;place-items:center;font-size:22px;margin:0 auto .5rem}
+.login-body{padding:1.25rem;display:flex;flex-direction:column;gap:.7rem}
+.error-msg{font-size:.78rem;color:var(--danger);padding:.45rem .7rem;background:#2a0f0f;border:1px solid #4a1f1f;border-radius:6px}
+pre.log-box{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.75rem 1rem;font-family:var(--mono);font-size:.72rem;overflow:auto;max-height:400px;color:var(--text);white-space:pre-wrap;word-break:break-all}
+.disks-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.75rem}
+.disk-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.9rem;cursor:pointer;transition:border-color .15s}
+.disk-card:hover{border-color:var(--accent)}
+.disk-card .di{font-size:1.8rem;margin-bottom:.35rem}
+.disk-card h4{font-size:.85rem;font-weight:600}
+.disk-card small{color:var(--muted);font-size:.72rem}
+.text-muted{color:var(--muted)}.text-right{text-align:right}.nowrap{white-space:nowrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+"""
+
+BASE_T = r"""<!DOCTYPE html><html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CDPNI — Servidor</title>
+<style>""" + CSS + r"""</style></head>
 <body>
-{% if session.logged_in %}
 <div class="topbar">
-  <div class="topbar-logo">📁 CDPNI <small>Arquivos</small></div>
+  <div class="topbar-logo">🖧 <span>CDPNI</span> Servidor</div>
+  {% if session.logged_in %}
   <div class="topbar-right">
-    <span>{{ session.user }}</span>
+    <span class="topbar-user">👤 {{ session.user }}</span>
+    <a href="{{ url_for('change_pass_page') }}" class="btn btn-sm">🔑 Senha</a>
     <a href="{{ url_for('logout') }}" class="btn btn-sm">Sair</a>
-    {% if session.user in admin_users %}<a href="{{ url_for('admin') }}" class="btn btn-sm">⚙ Admin</a>{% endif %}
   </div>
+  {% endif %}
 </div>
-{% if banner %}<img src="{{ banner }}" class="banner" alt="">{% endif %}
-{% endif %}
+{% if banner and session.logged_in %}<img src="{{ banner }}" class="banner" alt="">{% endif %}
+{% if session.logged_in %}
+<div class="layout">
+<nav class="sidebar">
+  <div class="sidebar-section">Arquivos</div>
+  <a href="{{ url_for('index') }}" class="{{ 'active' if active=='files' else '' }}">
+    <span class="sidebar-icon">🗂️</span> Compartilhamentos
+  </a>
+  {% if is_admin %}
+  <div class="sidebar-section">Gerenciamento</div>
+  <a href="{{ url_for('dashboard') }}" class="{{ 'active' if active=='dashboard' else '' }}">
+    <span class="sidebar-icon">📊</span> Dashboard
+  </a>
+  <a href="{{ url_for('users_page') }}" class="{{ 'active' if active=='users' else '' }}">
+    <span class="sidebar-icon">👥</span> Usuários
+  </a>
+  <a href="{{ url_for('groups_page') }}" class="{{ 'active' if active=='groups' else '' }}">
+    <span class="sidebar-icon">🏷️</span> Grupos
+  </a>
+  <a href="{{ url_for('shares_page') }}" class="{{ 'active' if active=='shares' else '' }}">
+    <span class="sidebar-icon">📁</span> Shares Samba
+  </a>
+  <a href="{{ url_for('raid_page') }}" class="{{ 'active' if active=='raid' else '' }}">
+    <span class="sidebar-icon">💾</span> RAID / Discos
+  </a>
+  <a href="{{ url_for('backups_page') }}" class="{{ 'active' if active=='backups' else '' }}">
+    <span class="sidebar-icon">🗄️</span> Backups
+  </a>
+  <a href="{{ url_for('logs_page') }}" class="{{ 'active' if active=='logs' else '' }}">
+    <span class="sidebar-icon">📋</span> Logs de Acesso
+  </a>
+  <div class="sidebar-section">Sistema</div>
+  <a href="{{ url_for('admin') }}" class="{{ 'active' if active=='admin' else '' }}">
+    <span class="sidebar-icon">⚙️</span> Configurações
+  </a>
+  {% endif %}
+</nav>
+<div class="main">
 {% with msgs = get_flashed_messages(with_categories=True) %}
-  {% for cat, msg in msgs %}
-  <div class="content"><div class="flash flash-{{ cat }}">{{ msg }}</div></div>
-  {% endfor %}
+  {% for cat, msg in msgs %}<div class="flash flash-{{ cat }}">{{ msg }}</div>{% endfor %}
 {% endwith %}
 {% block body %}{% endblock %}
+</div>
+</div>
+{% else %}
+{% block nobody %}{% endblock %}
+{% endif %}
 </body></html>
 """
 
-LOGIN_T = BASE + """
-{% block body %}
+LOGIN_T = BASE_T + """
+{% block nobody %}
 <div class="login-wrap"><div class="login-box">
-  <div class="login-header"><div class="logo">📁</div><h2>CDPNI</h2><p style="color:var(--muted);font-size:.8rem">Portal de Arquivos</p></div>
+  <div class="login-header"><div class="logo">🖧</div><h2>CDPNI</h2><p style="color:var(--muted);font-size:.8rem">Portal do Servidor</p></div>
   <form method="post" class="login-body">
     {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
-    <div class="form-group"><label>Usuário</label><input type="text" name="user" value="{{ req_user }}" autofocus></div>
-    <div class="form-group"><label>Senha</label><input type="password" name="password"></div>
+    <div class="form-group"><label>Usuário</label><input type="text" name="user" value="{{ req_user }}" autofocus autocomplete="username"></div>
+    <div class="form-group"><label>Senha</label><input type="password" name="password" autocomplete="current-password"></div>
     <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Entrar</button>
   </form>
 </div></div>
 {% endblock %}"""
 
-INDEX_T = BASE + """
-{% block body %}
-<div class="content">
-  <p style="color:var(--muted);font-size:.8rem;margin-bottom:1rem">Selecione um compartilhamento:</p>
-  <div class="disks-grid">
-  {% for disk in disks %}
-    <a href="{{ url_for('browse', disk=disk, rel='') }}" style="text-decoration:none">
-      <div class="disk-card"><div class="di">🗂️</div>
-        <h4>{{ disk }}</h4>
-        <small>Compartilhamento Samba</small>
-      </div>
-    </a>
-  {% else %}
-    <p style="color:var(--muted)">Nenhum compartilhamento disponível para seu usuário.</p>
-  {% endfor %}
-  </div>
-</div>
-{% endblock %}"""
-
-BROWSE_T = BASE + """
-{% block body %}
-<div class="content">
-  <div class="breadcrumb">
-    <a href="{{ url_for('index') }}">Início</a> /
-    <a href="{{ url_for('browse', disk=disk, rel='') }}">{{ disk }}</a>
-    {% set parts = rel.split('/') if rel else [] %}
-    {% set accumulated = namespace(path='') %}
-    {% for part in parts if part %}
-      {% set accumulated.path = accumulated.path + '/' + part %}
-      / <a href="{{ url_for('browse', disk=disk, rel=accumulated.path.lstrip('/')) }}">{{ part }}</a>
-    {% endfor %}
-  </div>
-  <div class="actions">
-    {% if rel %}
-    <a href="{{ url_for('browse', disk=disk, rel='/'.join(rel.split('/')[:-1])) }}" class="btn">⬆ Voltar</a>
-    {% endif %}
-    <button class="btn btn-primary" onclick="openMkdir()">📁 Nova Pasta</button>
-    <button class="btn btn-primary" onclick="openUpload()">⬆ Upload</button>
-  </div>
-  <div class="card">
-    <div class="card-header"><h3>{{ disk }}{% if rel %}/{{ rel }}{% endif %}</h3>
-    <span style="color:var(--muted);font-size:.8rem">{{ entries|length }} itens</span></div>
-    <table>
-      <thead><tr><th>Nome</th><th>Tipo</th><th>Tamanho</th><th style="text-align:right">Ações</th></tr></thead>
-      <tbody>
-      {% for e in entries %}
-      <tr>
-        <td>
-          {% if e.is_dir %}
-          <a href="{{ url_for('browse', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}">
-            <span class="icon">📁</span>{{ e.name }}
-          </a>
-          {% else %}
-          <span class="icon">📄</span>{{ e.name }}
-          {% endif %}
-        </td>
-        <td style="color:var(--muted)">{{ 'Pasta' if e.is_dir else e.ext }}</td>
-        <td style="color:var(--muted);font-family:var(--mono);font-size:.8rem">{{ '' if e.is_dir else e.size }}</td>
-        <td style="text-align:right;white-space:nowrap">
-          {% if not e.is_dir %}
-          <a href="{{ url_for('download', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}" class="btn btn-sm">⬇ Baixar</a>
-          {% endif %}
-          <button class="btn btn-sm" onclick="openRename('{{ e.name|e }}')">✏ Renomear</button>
-          <button class="btn btn-sm btn-danger" onclick="confirmDelete('{{ e.name|e }}','{{ 'dir' if e.is_dir else 'file' }}')">🗑</button>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:2rem">Pasta vazia</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- Modal Renomear -->
-<div class="modal-bg" id="mRename"><div class="modal">
-  <h3>Renomear</h3>
-  <form method="post" action="{{ url_for('rename', disk=disk, rel=rel) }}">
-    <input type="hidden" name="old_name" id="oldName">
-    <div class="form-group"><label>Novo nome</label><input type="text" name="new_name" id="newName"></div>
-    <div class="modal-footer">
-      <button type="button" class="btn" onclick="closeModal('mRename')">Cancelar</button>
-      <button type="submit" class="btn btn-primary">Renomear</button>
-    </div>
-  </form>
-</div></div>
-
-<!-- Modal Nova Pasta -->
-<div class="modal-bg" id="mMkdir"><div class="modal">
-  <h3>Nova Pasta</h3>
-  <form method="post" action="{{ url_for('mkdir', disk=disk, rel=rel) }}">
-    <div class="form-group"><label>Nome da pasta</label><input type="text" name="name" autofocus></div>
-    <div class="modal-footer">
-      <button type="button" class="btn" onclick="closeModal('mMkdir')">Cancelar</button>
-      <button type="submit" class="btn btn-primary">Criar</button>
-    </div>
-  </form>
-</div></div>
-
-<!-- Modal Upload -->
-<div class="modal-bg" id="mUpload"><div class="modal">
-  <h3>Upload de Arquivos</h3>
-  <form method="post" action="{{ url_for('upload', disk=disk, rel=rel) }}" enctype="multipart/form-data">
-    <div class="form-group"><label>Selecione os arquivos</label>
-      <input type="file" name="files" multiple></div>
-    <div class="modal-footer">
-      <button type="button" class="btn" onclick="closeModal('mUpload')">Cancelar</button>
-      <button type="submit" class="btn btn-primary">⬆ Enviar</button>
-    </div>
-  </form>
-</div></div>
-
-<!-- Form Deletar (oculto) -->
-<form method="post" id="fDel" action="{{ url_for('delete', disk=disk, rel=rel) }}" style="display:none">
-  <input type="hidden" name="name" id="delName">
-  <input type="hidden" name="is_dir" id="delIsDir">
-</form>
-
-<script>
-function openRename(n){document.getElementById('oldName').value=n;document.getElementById('newName').value=n;document.getElementById('mRename').classList.add('open');}
-function openMkdir(){document.getElementById('mMkdir').classList.add('open');}
-function openUpload(){document.getElementById('mUpload').classList.add('open');}
-function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-function confirmDelete(name,type){
-  if(!confirm('Excluir "'+name+'"? Esta ação não pode ser desfeita.'))return;
-  document.getElementById('delName').value=name;
-  document.getElementById('delIsDir').value=type==='dir'?'1':'0';
-  document.getElementById('fDel').submit();
-}
-</script>
-{% endblock %}"""
-
-ADMIN_T = BASE + """
-{% block body %}
-<div class="content">
-  <h2 style="margin-bottom:1.5rem">⚙ Administração</h2>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-    <!-- Aviso do portal -->
-    <div class="card"><div class="card-header"><h3>Aviso / Notícia</h3></div>
-      <div style="padding:1rem">
-        <form method="post" action="{{ url_for('admin_notice') }}">
-          <div class="form-group"><label>Texto (HTML simples aceito)</label>
-            <textarea name="notice" rows="4" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:.5rem;font-size:.85rem;color:var(--text);width:100%;font-family:var(--font)">{{ notice }}</textarea></div>
-          <button class="btn btn-primary btn-sm">Salvar</button>
-        </form>
-      </div>
-    </div>
-    <!-- Banner -->
-    <div class="card"><div class="card-header"><h3>Banner do Portal</h3></div>
-      <div style="padding:1rem">
-        {% if banner %}<img src="{{ banner }}" style="max-height:80px;border-radius:4px;margin-bottom:.75rem;display:block">{% endif %}
-        <form method="post" action="{{ url_for('admin_banner_upload') }}" enctype="multipart/form-data">
-          <div class="form-group"><label>Imagem (JPG/PNG/GIF/WebP)</label>
-            <input type="file" name="banner" accept="image/*"></div>
-          <button class="btn btn-primary btn-sm">Enviar</button>
-          {% if banner %}<a href="{{ url_for('admin_banner_delete') }}" class="btn btn-danger btn-sm" style="margin-left:.5rem">Remover</a>{% endif %}
-        </form>
-      </div>
-    </div>
-    <!-- Resetar senha de usuário -->
-    <div class="card"><div class="card-header"><h3>Resetar Senha de Usuário</h3></div>
-      <div style="padding:1rem">
-        <form method="post" action="{{ url_for('admin_user_pass', username='') }}" id="fResetPass">
-          <div class="form-group"><label>Usuário</label><input type="text" name="username" id="rpUser"></div>
-          <div class="form-group"><label>Nova Senha</label><input type="password" name="new_pass" id="rpPass"></div>
-          <div class="form-group"><label>Confirmar</label><input type="password" name="confirm_pass" id="rpConf"></div>
-          <button type="button" class="btn btn-primary btn-sm" onclick="doResetPass()">Resetar</button>
-          <span id="rpMsg" style="font-size:.8rem;margin-left:.5rem"></span>
-        </form>
-      </div>
-    </div>
-    <!-- Alterar própria senha -->
-    <div class="card"><div class="card-header"><h3>Minha Senha</h3></div>
-      <div style="padding:1rem">
-        <form method="post" action="{{ url_for('change_pass') }}">
-          <div class="form-group"><label>Senha Atual</label><input type="password" name="current_pass"></div>
-          <div class="form-group"><label>Nova Senha</label><input type="password" name="new_pass"></div>
-          <div class="form-group"><label>Confirmar</label><input type="password" name="confirm_pass"></div>
-          <button class="btn btn-primary btn-sm">Salvar</button>
-        </form>
-      </div>
-    </div>
-  </div>
-</div>
-<script>
-async function doResetPass(){
-  const user=document.getElementById('rpUser').value;
-  const pass=document.getElementById('rpPass').value;
-  const conf=document.getElementById('rpConf').value;
-  if(!user||!pass){document.getElementById('rpMsg').textContent='Preencha todos os campos';return;}
-  if(pass!==conf){document.getElementById('rpMsg').textContent='Senhas não coincidem';return;}
-  const fd=new FormData();fd.append('username',user);fd.append('new_pass',pass);fd.append('confirm_pass',conf);
-  const r=await fetch('/admin/user-pass/'+encodeURIComponent(user),{method:'POST',body:fd});
-  const j=await r.json();
-  document.getElementById('rpMsg').textContent=j.message||j.error||'';
-  document.getElementById('rpMsg').style.color=j.ok?'var(--success)':'var(--danger)';
-}
-</script>
-{% endblock %}"""
-
-# ── rotas ─────────────────────────────────────────────────────────────────────
+# ── auth ───────────────────────────────────────────────────────────────────────
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if session.get('logged_in'):
@@ -423,15 +493,29 @@ def login():
             nxt = request.args.get('next')
             return redirect(nxt if nxt and nxt.startswith('/') else url_for('index'))
         error = 'Usuário ou senha inválidos'
-    return render_template_string(
-        LOGIN_T, error=error, req_user=req_user,
-        session=session, admin_users=ADMIN_USERS, banner=get_banner()
-    )
+    return render_template_string(LOGIN_T, error=error, req_user=req_user,
+        session=session, banner=get_banner(), active='', is_admin=False)
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+# ── arquivos ───────────────────────────────────────────────────────────────────
+INDEX_T = BASE_T + """
+{% block body %}
+<div class="page-title">🗂️ Compartilhamentos</div>
+{% if notice %}<div class="flash flash-warning">{{ notice|safe }}</div>{% endif %}
+<div class="disks-grid">
+{% for disk in disks %}
+  <a href="{{ url_for('browse', disk=disk, rel='') }}" style="text-decoration:none">
+    <div class="disk-card"><div class="di">🗂️</div><h4>{{ disk }}</h4><small>Compartilhamento Samba</small></div>
+  </a>
+{% else %}
+  <p class="text-muted">Nenhum compartilhamento disponível.</p>
+{% endfor %}
+</div>
+{% endblock %}"""
 
 @app.route('/')
 @login_required
@@ -439,10 +523,85 @@ def index():
     disks = user_disks()
     notice_file = os.path.join(PORTAL_DIR, 'notice.html')
     notice = open(notice_file).read() if os.path.exists(notice_file) else ''
-    return render_template_string(
-        INDEX_T, disks=disks, notice=notice,
-        session=session, admin_users=ADMIN_USERS, banner=get_banner()
-    )
+    is_admin = session.get('user') in ADMIN_USERS
+    return render_template_string(INDEX_T, disks=disks, notice=notice,
+        session=session, banner=get_banner(), active='files', is_admin=is_admin)
+
+BROWSE_T = BASE_T + """
+{% block body %}
+<div style="font-size:.78rem;color:var(--muted);margin-bottom:.75rem">
+  <a href="{{ url_for('index') }}" style="color:var(--muted)">Início</a> /
+  <a href="{{ url_for('browse', disk=disk, rel='') }}" style="color:var(--muted)">{{ disk }}</a>
+  {% set parts = rel.split('/') if rel else [] %}
+  {% set acc = namespace(path='') %}
+  {% for part in parts if part %}
+    {% set acc.path = acc.path + '/' + part %}
+    / <a href="{{ url_for('browse', disk=disk, rel=acc.path.lstrip('/')) }}" style="color:var(--muted)">{{ part }}</a>
+  {% endfor %}
+</div>
+<div class="actions">
+  {% if rel %}<a href="{{ url_for('browse', disk=disk, rel='/'.join(rel.split('/')[:-1])) }}" class="btn">⬆ Voltar</a>{% endif %}
+  <button class="btn btn-primary" onclick="document.getElementById('mMkdir').classList.add('open')">📁 Nova Pasta</button>
+  <button class="btn btn-primary" onclick="document.getElementById('mUpload').classList.add('open')">⬆ Upload</button>
+</div>
+<div class="card">
+  <div class="card-header"><h3>{{ disk }}{% if rel %}/{{ rel }}{% endif %}</h3>
+  <span class="text-muted" style="font-size:.78rem">{{ entries|length }} itens</span></div>
+  <table>
+    <thead><tr><th>Nome</th><th>Tipo</th><th>Tamanho</th><th class="text-right">Ações</th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+    <tr>
+      <td>{% if e.is_dir %}<a href="{{ url_for('browse', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}">📁 {{ e.name }}</a>
+      {% else %}📄 {{ e.name }}{% endif %}</td>
+      <td class="text-muted">{{ 'Pasta' if e.is_dir else e.ext }}</td>
+      <td class="text-muted nowrap" style="font-family:var(--mono);font-size:.76rem">{{ '' if e.is_dir else e.size }}</td>
+      <td class="text-right nowrap">
+        {% if not e.is_dir %}<a href="{{ url_for('download', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}" class="btn btn-xs">⬇</a>{% endif %}
+        <button class="btn btn-xs" onclick="openRename('{{ e.name|e }}')">✏</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('{{ e.name|e }}','{{ 'dir' if e.is_dir else 'file' }}')">🗑</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">Pasta vazia</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="modal-bg" id="mRename"><div class="modal"><h3>Renomear</h3>
+  <form method="post" action="{{ url_for('rename', disk=disk, rel=rel) }}">
+    <input type="hidden" name="old_name" id="oldName">
+    <div class="form-group"><label>Novo nome</label><input type="text" name="new_name" id="newName"></div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mRename')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">Renomear</button></div>
+  </form></div></div>
+<div class="modal-bg" id="mMkdir"><div class="modal"><h3>Nova Pasta</h3>
+  <form method="post" action="{{ url_for('mkdir', disk=disk, rel=rel) }}">
+    <div class="form-group"><label>Nome</label><input type="text" name="name" autofocus></div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mMkdir')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">Criar</button></div>
+  </form></div></div>
+<div class="modal-bg" id="mUpload"><div class="modal"><h3>Upload de Arquivos</h3>
+  <form method="post" action="{{ url_for('upload', disk=disk, rel=rel) }}" enctype="multipart/form-data">
+    <div class="form-group"><label>Arquivos</label><input type="file" name="files" multiple></div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mUpload')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">⬆ Enviar</button></div>
+  </form></div></div>
+<form method="post" id="fDel" action="{{ url_for('delete', disk=disk, rel=rel) }}" style="display:none">
+  <input type="hidden" name="name" id="delName"><input type="hidden" name="is_dir" id="delIsDir">
+</form>
+<script>
+function openRename(n){document.getElementById('oldName').value=n;document.getElementById('newName').value=n;document.getElementById('mRename').classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+function confirmDelete(name,type){
+  if(!confirm('Excluir "'+name+'"?'))return;
+  document.getElementById('delName').value=name;
+  document.getElementById('delIsDir').value=type==='dir'?'1':'0';
+  document.getElementById('fDel').submit();
+}
+</script>
+{% endblock %}"""
 
 @app.route('/browse/<disk>/', defaults={'rel': ''})
 @app.route('/browse/<disk>/<path:rel>')
@@ -459,19 +618,17 @@ def browse(disk, rel):
             try:
                 stat = item.stat()
                 entries.append(type('E', (), {
-                    'name':   item.name,
-                    'is_dir': item.is_dir(),
-                    'size':   fmt_size(stat.st_size),
-                    'ext':    item.suffix.upper().lstrip('.') or 'Arquivo'
+                    'name': item.name, 'is_dir': item.is_dir(),
+                    'size': fmt_size(stat.st_size),
+                    'ext':  item.suffix.upper().lstrip('.') or 'Arquivo'
                 })())
             except PermissionError:
                 pass
     except PermissionError:
         abort(403)
-    return render_template_string(
-        BROWSE_T, disk=disk, rel=rel, entries=entries,
-        session=session, admin_users=ADMIN_USERS, banner=get_banner()
-    )
+    is_admin = session.get('user') in ADMIN_USERS
+    return render_template_string(BROWSE_T, disk=disk, rel=rel, entries=entries,
+        session=session, banner=get_banner(), active='files', is_admin=is_admin)
 
 @app.route('/download/<disk>/<path:rel>')
 @login_required
@@ -565,6 +722,795 @@ def delete(disk, rel):
         flash(f'"{name}" removido', 'success')
     return redirect(url_for('browse', disk=disk, rel=rel))
 
+@app.route('/banner-img/<filename>')
+def banner_img(filename):
+    name = secure_filename(filename)
+    path = os.path.join(BANNER_DIR, name)
+    if not os.path.exists(path):
+        abort(404)
+    mime, _ = mimetypes.guess_type(path)
+    return send_file(path, mimetype=mime or 'image/jpeg')
+
+# ── dashboard ──────────────────────────────────────────────────────────────────
+DASHBOARD_T = BASE_T + """
+{% block body %}
+<div class="page-title">📊 Dashboard <small>Visão geral do servidor</small></div>
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">CPU</div>
+    <div class="value {{ 'stat-err' if cpu.pct > 85 else ('stat-warn' if cpu.pct > 65 else 'stat-ok') }}">{{ cpu.pct }}%</div>
+    <div class="sub">{{ cpu.cores }} núcleos</div>
+    <div class="progress"><div class="progress-bar {{ 'err' if cpu.pct > 85 else ('warn' if cpu.pct > 65 else '') }}" style="width:{{ cpu.pct }}%"></div></div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Memória RAM</div>
+    <div class="value {{ 'stat-err' if mem.pct > 85 else ('stat-warn' if mem.pct > 65 else 'stat-ok') }}">{{ mem.pct }}%</div>
+    <div class="sub">{{ mem.used_h }} / {{ mem.total_h }}</div>
+    <div class="progress"><div class="progress-bar {{ 'err' if mem.pct > 85 else ('warn' if mem.pct > 65 else '') }}" style="width:{{ mem.pct }}%"></div></div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Uptime</div>
+    <div class="value stat-ok" style="font-size:1rem">{{ uptime }}</div>
+    <div class="sub">em execução</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Conexões Samba</div>
+    <div class="value" style="color:var(--accent)">{{ conns|length }}</div>
+    <div class="sub">sessões ativas</div>
+  </div>
+</div>
+<div class="grid2">
+  <div class="card">
+    <div class="card-header"><h3>💾 Uso de Disco</h3></div>
+    <table>
+      <thead><tr><th>Ponto</th><th>Uso</th><th>Livre</th></tr></thead>
+      <tbody>
+      {% for d in disks %}
+      <tr>
+        <td>{{ d.mount }}<br><span class="text-muted" style="font-size:.7rem;font-family:var(--mono)">{{ d.source }}</span></td>
+        <td>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <div class="progress" style="width:80px"><div class="progress-bar {{ 'err' if d.pct|int > 85 else ('warn' if d.pct|int > 65 else '') }}" style="width:{{ d.pct }}%"></div></div>
+            <span style="font-size:.76rem">{{ d.pct }}%</span>
+          </div>
+        </td>
+        <td class="text-muted" style="font-size:.76rem">{{ d.avail }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3>👥 Sessões Samba Ativas</h3></div>
+    {% if conns %}
+    <table>
+      <thead><tr><th>Usuário</th><th>Máquina</th><th>Desde</th></tr></thead>
+      <tbody>
+      {% for c in conns %}
+      <tr><td>{{ c.user }}</td><td class="text-muted">{{ c.machine }}</td>
+      <td class="text-muted nowrap" style="font-size:.72rem">{{ c.since }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="card-body text-muted" style="font-size:.82rem">Nenhuma sessão ativa</div>
+    {% endif %}
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>⚙️ Serviços</h3></div>
+  <table>
+    <thead><tr><th>Serviço</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for svc in services %}
+    <tr><td>{{ svc.name }}</td>
+    <td><span class="badge {{ 'badge-ok' if svc.active else 'badge-err' }}">{{ 'Ativo' if svc.active else 'Inativo' }}</span></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}"""
+
+@app.route('/dashboard')
+@admin_required
+def dashboard():
+    svc_list = ['smbd', 'nmbd', 'winbind', 'cdpni-portal', 'nginx']
+    services = []
+    for s in svc_list:
+        rc, _, _ = run(['systemctl', 'is-active', s])
+        services.append({'name': s, 'active': rc == 0})
+    return render_template_string(DASHBOARD_T,
+        cpu=get_cpu(), mem=get_memory(), uptime=get_uptime(),
+        disks=get_disk_usage(), conns=get_samba_connections(),
+        services=services,
+        session=session, banner=get_banner(), active='dashboard', is_admin=True)
+
+# ── usuários ───────────────────────────────────────────────────────────────────
+USERS_T = BASE_T + """
+{% block body %}
+<div class="page-title">👥 Usuários do Sistema</div>
+<div class="actions">
+  <button class="btn btn-primary" onclick="document.getElementById('mNewUser').classList.add('open')">➕ Novo Usuário</button>
+</div>
+<div class="card">
+  <div class="card-header"><h3>Usuários</h3><span class="text-muted" style="font-size:.76rem">{{ users|length }}</span></div>
+  <table>
+    <thead><tr><th>Usuário</th><th>UID</th><th>Home</th><th class="text-right">Ações</th></tr></thead>
+    <tbody>
+    {% for u in users %}
+    <tr>
+      <td><strong>{{ u.name }}</strong></td>
+      <td class="text-muted">{{ u.uid }}</td>
+      <td class="text-muted" style="font-family:var(--mono);font-size:.74rem">{{ u.home }}</td>
+      <td class="text-right nowrap">
+        <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">🔑 Senha</button>
+        {% if u.name != session.user %}
+        <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">🗑</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="modal-bg" id="mNewUser"><div class="modal"><h3>Novo Usuário</h3>
+  <form method="post" action="{{ url_for('user_create') }}">
+    <div class="form-group"><label>Usuário (letras minúsculas, números, _ e -)</label>
+      <input type="text" name="username" pattern="[a-z][a-z0-9_-]{0,31}" required autofocus></div>
+    <div class="form-group"><label>Senha</label><input type="password" name="password" minlength="4" required></div>
+    <div class="form-group"><label>Confirmar Senha</label><input type="password" name="confirm" required></div>
+    <div class="form-group"><label>Adicionar ao Samba</label>
+      <select name="add_samba"><option value="1">Sim</option><option value="0">Não</option></select></div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeModal('mNewUser')">Cancelar</button>
+      <button type="submit" class="btn btn-primary">Criar</button>
+    </div>
+  </form></div></div>
+<div class="modal-bg" id="mResetPass"><div class="modal"><h3>Redefinir Senha</h3>
+  <form method="post" action="{{ url_for('user_passwd') }}">
+    <input type="hidden" name="username" id="rpUsername">
+    <div class="form-group"><label>Usuário</label><input type="text" id="rpUserLabel" readonly style="opacity:.6"></div>
+    <div class="form-group"><label>Nova Senha</label><input type="password" name="password" id="rpPass" minlength="4" required></div>
+    <div class="form-group"><label>Confirmar</label><input type="password" name="confirm" id="rpConf" required></div>
+    <div class="form-group"><label>Atualizar Samba também</label>
+      <select name="update_samba"><option value="1">Sim</option><option value="0">Não</option></select></div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeModal('mResetPass')">Cancelar</button>
+      <button type="submit" class="btn btn-primary">Redefinir</button>
+    </div>
+  </form></div></div>
+<form method="post" id="fDelUser" action="{{ url_for('user_delete') }}" style="display:none">
+  <input type="hidden" name="username" id="delUsername">
+</form>
+<script>
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+function openResetPass(u){document.getElementById('rpUsername').value=u;document.getElementById('rpUserLabel').value=u;document.getElementById('mResetPass').classList.add('open');}
+function confirmDelUser(u){if(!confirm('Excluir usuário "'+u+'"? Remove do sistema e do Samba.'))return;document.getElementById('delUsername').value=u;document.getElementById('fDelUser').submit();}
+</script>
+{% endblock %}"""
+
+@app.route('/admin/users')
+@admin_required
+def users_page():
+    return render_template_string(USERS_T, users=get_system_users(),
+        session=session, banner=get_banner(), active='users', is_admin=True)
+
+@app.route('/admin/users/create', methods=['POST'])
+@admin_required
+def user_create():
+    username  = request.form.get('username', '').strip()
+    password  = request.form.get('password', '')
+    confirm   = request.form.get('confirm', '')
+    add_samba = request.form.get('add_samba', '1') == '1'
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+        flash('Nome de usuário inválido', 'error')
+        return redirect(url_for('users_page'))
+    if password != confirm:
+        flash('Senhas não coincidem', 'error')
+        return redirect(url_for('users_page'))
+    if len(password) < 4:
+        flash('Mínimo 4 caracteres', 'error')
+        return redirect(url_for('users_page'))
+    rc, _, err = run(['sudo', 'useradd', '-m', '-s', '/bin/bash', username])
+    if rc != 0:
+        flash(f'Erro ao criar usuário: {err}', 'error')
+        return redirect(url_for('users_page'))
+    run(['sudo', 'chpasswd'], input_=f'{username}:{password}')
+    if add_samba:
+        run(['sudo', 'smbpasswd', '-a', '-s', username], input_=f'{password}\n{password}\n')
+    flash(f'Usuário "{username}" criado', 'success')
+    return redirect(url_for('users_page'))
+
+@app.route('/admin/users/passwd', methods=['POST'])
+@admin_required
+def user_passwd():
+    username     = request.form.get('username', '').strip()
+    password     = request.form.get('password', '')
+    confirm      = request.form.get('confirm', '')
+    update_samba = request.form.get('update_samba', '1') == '1'
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+        flash('Usuário inválido', 'error')
+        return redirect(url_for('users_page'))
+    if password != confirm:
+        flash('Senhas não coincidem', 'error')
+        return redirect(url_for('users_page'))
+    if len(password) < 4:
+        flash('Mínimo 4 caracteres', 'error')
+        return redirect(url_for('users_page'))
+    rc, _, err = run(['sudo', 'chpasswd'], input_=f'{username}:{password}')
+    if rc != 0:
+        flash(f'Erro ao alterar senha: {err}', 'error')
+        return redirect(url_for('users_page'))
+    if update_samba:
+        run(['sudo', 'smbpasswd', '-s', username], input_=f'{password}\n{password}\n')
+    flash(f'Senha de "{username}" alterada', 'success')
+    return redirect(url_for('users_page'))
+
+@app.route('/admin/users/delete', methods=['POST'])
+@admin_required
+def user_delete():
+    username = request.form.get('username', '').strip()
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+        flash('Usuário inválido', 'error')
+        return redirect(url_for('users_page'))
+    if username == session.get('user'):
+        flash('Não é possível excluir o próprio usuário logado', 'error')
+        return redirect(url_for('users_page'))
+    run(['sudo', 'smbpasswd', '-x', username])
+    rc, _, err = run(['sudo', 'userdel', '-r', username])
+    if rc != 0 and 'does not exist' not in err:
+        flash(f'Erro ao remover: {err}', 'error')
+    else:
+        flash(f'Usuário "{username}" removido', 'success')
+    return redirect(url_for('users_page'))
+
+# ── grupos ─────────────────────────────────────────────────────────────────────
+GROUPS_T = BASE_T + """
+{% block body %}
+<div class="page-title">🏷️ Grupos do Sistema</div>
+<div class="actions">
+  <button class="btn btn-primary" onclick="document.getElementById('mNewGroup').classList.add('open')">➕ Novo Grupo</button>
+</div>
+<div class="card">
+  <div class="card-header"><h3>Grupos</h3></div>
+  <table>
+    <thead><tr><th>Grupo</th><th>GID</th><th>Membros</th><th class="text-right">Ações</th></tr></thead>
+    <tbody>
+    {% for g in groups %}
+    <tr>
+      <td><strong>{{ g.name }}</strong></td>
+      <td class="text-muted">{{ g.gid }}</td>
+      <td class="text-muted" style="font-size:.76rem">{{ g.members|join(', ') if g.members else '—' }}</td>
+      <td class="text-right nowrap">
+        <button class="btn btn-xs" onclick="openEditGroup('{{ g.name }}','{{ g.members|join(',') }}')">✏ Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelGroup('{{ g.name }}')">🗑</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="modal-bg" id="mNewGroup"><div class="modal"><h3>Novo Grupo</h3>
+  <form method="post" action="{{ url_for('group_create') }}">
+    <div class="form-group"><label>Nome do grupo</label>
+      <input type="text" name="groupname" pattern="[a-z][a-z0-9_-]{0,31}" required autofocus></div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mNewGroup')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">Criar</button></div>
+  </form></div></div>
+<div class="modal-bg" id="mEditGroup"><div class="modal"><h3>Editar Membros</h3>
+  <form method="post" action="{{ url_for('group_members') }}">
+    <input type="hidden" name="groupname" id="editGroupName">
+    <div class="form-group"><label>Grupo</label><input type="text" id="editGroupLabel" readonly style="opacity:.6"></div>
+    <div class="form-group"><label>Membros (separados por vírgula)</label>
+      <input type="text" name="members" id="editGroupMembers" placeholder="user1,user2"></div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mEditGroup')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">Salvar</button></div>
+  </form></div></div>
+<form method="post" id="fDelGroup" action="{{ url_for('group_delete') }}" style="display:none">
+  <input type="hidden" name="groupname" id="delGroupName">
+</form>
+<script>
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+function openEditGroup(name,members){document.getElementById('editGroupName').value=name;document.getElementById('editGroupLabel').value=name;document.getElementById('editGroupMembers').value=members;document.getElementById('mEditGroup').classList.add('open');}
+function confirmDelGroup(g){if(!confirm('Excluir grupo "'+g+'"?'))return;document.getElementById('delGroupName').value=g;document.getElementById('fDelGroup').submit();}
+</script>
+{% endblock %}"""
+
+@app.route('/admin/groups')
+@admin_required
+def groups_page():
+    return render_template_string(GROUPS_T, groups=get_system_groups(),
+        session=session, banner=get_banner(), active='groups', is_admin=True)
+
+@app.route('/admin/groups/create', methods=['POST'])
+@admin_required
+def group_create():
+    groupname = request.form.get('groupname', '').strip()
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', groupname):
+        flash('Nome de grupo inválido', 'error')
+        return redirect(url_for('groups_page'))
+    rc, _, err = run(['sudo', 'groupadd', groupname])
+    if rc != 0:
+        flash(f'Erro ao criar grupo: {err}', 'error')
+    else:
+        flash(f'Grupo "{groupname}" criado', 'success')
+    return redirect(url_for('groups_page'))
+
+@app.route('/admin/groups/members', methods=['POST'])
+@admin_required
+def group_members():
+    groupname = request.form.get('groupname', '').strip()
+    members   = request.form.get('members', '').strip()
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', groupname):
+        flash('Grupo inválido', 'error')
+        return redirect(url_for('groups_page'))
+    member_list = [m.strip() for m in members.split(',') if m.strip()]
+    rc, _, err = run(['sudo', 'gpasswd', '-M', ','.join(member_list), groupname])
+    if rc != 0:
+        flash(f'Erro ao atualizar membros: {err}', 'error')
+    else:
+        flash(f'Membros do grupo "{groupname}" atualizados', 'success')
+    return redirect(url_for('groups_page'))
+
+@app.route('/admin/groups/delete', methods=['POST'])
+@admin_required
+def group_delete():
+    groupname = request.form.get('groupname', '').strip()
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', groupname):
+        flash('Grupo inválido', 'error')
+        return redirect(url_for('groups_page'))
+    rc, _, err = run(['sudo', 'groupdel', groupname])
+    if rc != 0:
+        flash(f'Erro ao remover: {err}', 'error')
+    else:
+        flash(f'Grupo "{groupname}" removido', 'success')
+    return redirect(url_for('groups_page'))
+
+# ── shares samba ───────────────────────────────────────────────────────────────
+SHARES_T = BASE_T + """
+{% block body %}
+<div class="page-title">📁 Shares Samba <small>{{ smb_conf }}</small></div>
+<div class="actions">
+  <button class="btn btn-primary" onclick="document.getElementById('mNewShare').classList.add('open')">➕ Novo Share</button>
+  <a href="{{ url_for('shares_testparm') }}" class="btn">🔍 testparm</a>
+  <form method="post" action="{{ url_for('shares_reload') }}" style="display:inline">
+    <button class="btn">🔄 Reload Samba</button>
+  </form>
+</div>
+<div class="card">
+  <div class="card-header"><h3>Compartilhamentos</h3><span class="text-muted" style="font-size:.76rem">{{ shares|length }}</span></div>
+  <table>
+    <thead><tr><th>Nome</th><th>Caminho</th><th>Usuários/Grupos</th><th>Leitura</th><th class="text-right">Ações</th></tr></thead>
+    <tbody>
+    {% for s in shares %}
+    <tr>
+      <td><strong>{{ s.name }}</strong></td>
+      <td class="text-muted nowrap" style="font-family:var(--mono);font-size:.74rem">{{ s.path }}</td>
+      <td class="text-muted" style="font-size:.74rem">{{ s.valid_users or '—' }}</td>
+      <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
+      <td class="text-right nowrap">
+        <button class="btn btn-xs" onclick="openEditShare({{ s|tojson }})">✏ Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name }}')">🗑</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="modal-bg" id="mNewShare"><div class="modal"><h3>Novo Share</h3>
+  <form method="post" action="{{ url_for('share_create') }}">
+    <div class="form-group"><label>Nome do share</label><input type="text" name="name" required autofocus></div>
+    <div class="form-group"><label>Caminho (path)</label><input type="text" name="path" placeholder="/mnt/raid/shares/nome" required></div>
+    <div class="form-group"><label>Comentário</label><input type="text" name="comment"></div>
+    <div class="form-group"><label>Usuários/grupos válidos (ex: user1 @grupo1)</label><input type="text" name="valid_users"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Somente leitura</label>
+        <select name="read_only"><option value="no">Não</option><option value="yes">Sim</option></select></div>
+      <div class="form-group"><label>Visível no browse</label>
+        <select name="browseable"><option value="yes">Sim</option><option value="no">Não</option></select></div>
+    </div>
+    <div class="form-group"><label>Criar diretório se não existir</label>
+      <select name="create_dir"><option value="1">Sim</option><option value="0">Não</option></select></div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mNewShare')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">Criar</button></div>
+  </form></div></div>
+<div class="modal-bg" id="mEditShare"><div class="modal"><h3>Editar Share</h3>
+  <form method="post" action="{{ url_for('share_edit') }}">
+    <input type="hidden" name="original_name" id="esOrigName">
+    <div class="form-group"><label>Nome</label><input type="text" name="name" id="esName" required></div>
+    <div class="form-group"><label>Caminho</label><input type="text" name="path" id="esPath" required></div>
+    <div class="form-group"><label>Comentário</label><input type="text" name="comment" id="esComment"></div>
+    <div class="form-group"><label>Usuários/grupos válidos</label><input type="text" name="valid_users" id="esUsers"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Somente leitura</label>
+        <select name="read_only" id="esRO"><option value="no">Não</option><option value="yes">Sim</option></select></div>
+      <div class="form-group"><label>Visível</label>
+        <select name="browseable" id="esBrowse"><option value="yes">Sim</option><option value="no">Não</option></select></div>
+    </div>
+    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mEditShare')">Cancelar</button>
+    <button type="submit" class="btn btn-primary">Salvar</button></div>
+  </form></div></div>
+<form method="post" id="fDelShare" action="{{ url_for('share_delete') }}" style="display:none">
+  <input type="hidden" name="name" id="delShareName">
+</form>
+<script>
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+function openEditShare(s){
+  document.getElementById('esOrigName').value=s.name;
+  document.getElementById('esName').value=s.name;
+  document.getElementById('esPath').value=s.path||'';
+  document.getElementById('esComment').value=s.comment||'';
+  document.getElementById('esUsers').value=s.valid_users||'';
+  document.getElementById('esRO').value=s.read_only||'no';
+  document.getElementById('esBrowse').value=s.browseable||'yes';
+  document.getElementById('mEditShare').classList.add('open');
+}
+function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
+</script>
+{% endblock %}"""
+
+def _rebuild_smb_conf(shares: list[dict]) -> str:
+    try:
+        raw = open(SMB_CONF).read()
+    except Exception:
+        raw = '[global]\n   workgroup = WORKGROUP\n   server string = Samba Server\n'
+    lines_out = []
+    in_managed = False
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('[') and stripped.endswith(']'):
+            name = stripped[1:-1]
+            if name in ('global', 'homes', 'printers', 'print$'):
+                in_managed = False
+                lines_out.append(line)
+            else:
+                in_managed = True
+        elif not in_managed:
+            lines_out.append(line)
+    result = '\n'.join(lines_out).rstrip() + '\n'
+    for s in shares:
+        result += f'\n[{s["name"]}]\n'
+        if s.get('comment'):
+            result += f'   comment = {s["comment"]}\n'
+        result += f'   path = {s["path"]}\n'
+        result += f'   browseable = {s.get("browseable","yes")}\n'
+        result += f'   read only = {s.get("read_only","no")}\n'
+        if s.get('valid_users'):
+            result += f'   valid users = {s["valid_users"]}\n'
+        result += f'   create mask = {s.get("create_mask","0664")}\n'
+        result += f'   directory mask = {s.get("directory_mask","0775")}\n'
+    return result
+
+def _write_smb_conf(content: str) -> tuple[bool, str]:
+    rc, _, err = run(['sudo', 'tee', SMB_CONF], input_=content)
+    return (rc == 0), err
+
+@app.route('/admin/shares')
+@admin_required
+def shares_page():
+    return render_template_string(SHARES_T, shares=parse_smb_shares(),
+        smb_conf=SMB_CONF,
+        session=session, banner=get_banner(), active='shares', is_admin=True)
+
+@app.route('/admin/shares/create', methods=['POST'])
+@admin_required
+def share_create():
+    name        = re.sub(r'[^\w\-]', '', request.form.get('name', '').strip())
+    path        = request.form.get('path', '').strip()
+    comment     = request.form.get('comment', '').strip()
+    valid_users = request.form.get('valid_users', '').strip()
+    read_only   = request.form.get('read_only', 'no')
+    browseable  = request.form.get('browseable', 'yes')
+    create_dir  = request.form.get('create_dir', '1') == '1'
+    if not name or not path:
+        flash('Nome e caminho são obrigatórios', 'error')
+        return redirect(url_for('shares_page'))
+    if create_dir and not os.path.exists(path):
+        run(['sudo', 'mkdir', '-p', path])
+        run(['sudo', 'chmod', '0775', path])
+        run(['sudo', 'chown', 'root:sambashare', path])
+    shares = parse_smb_shares()
+    if any(s['name'] == name for s in shares):
+        flash(f'Share "{name}" já existe', 'error')
+        return redirect(url_for('shares_page'))
+    shares.append({'name': name, 'path': path, 'comment': comment,
+                   'valid_users': valid_users, 'read_only': read_only,
+                   'browseable': browseable, 'create_mask': '0664', 'directory_mask': '0775'})
+    ok, err = _write_smb_conf(_rebuild_smb_conf(shares))
+    if not ok:
+        flash(f'Erro ao salvar smb.conf: {err}', 'error')
+    else:
+        run(['sudo', 'smbcontrol', 'smbd', 'reload-config'])
+        flash(f'Share "{name}" criado', 'success')
+    return redirect(url_for('shares_page'))
+
+@app.route('/admin/shares/edit', methods=['POST'])
+@admin_required
+def share_edit():
+    orig_name   = re.sub(r'[^\w\-]', '', request.form.get('original_name', '').strip())
+    name        = re.sub(r'[^\w\-]', '', request.form.get('name', '').strip())
+    path        = request.form.get('path', '').strip()
+    comment     = request.form.get('comment', '').strip()
+    valid_users = request.form.get('valid_users', '').strip()
+    read_only   = request.form.get('read_only', 'no')
+    browseable  = request.form.get('browseable', 'yes')
+    if not name or not path:
+        flash('Nome e caminho são obrigatórios', 'error')
+        return redirect(url_for('shares_page'))
+    shares = parse_smb_shares()
+    updated = []
+    found = False
+    for s in shares:
+        if s['name'] == orig_name:
+            found = True
+            s.update({'name': name, 'path': path, 'comment': comment,
+                      'valid_users': valid_users, 'read_only': read_only, 'browseable': browseable})
+        updated.append(s)
+    if not found:
+        flash(f'Share "{orig_name}" não encontrado', 'error')
+        return redirect(url_for('shares_page'))
+    ok, err = _write_smb_conf(_rebuild_smb_conf(updated))
+    if not ok:
+        flash(f'Erro ao salvar smb.conf: {err}', 'error')
+    else:
+        run(['sudo', 'smbcontrol', 'smbd', 'reload-config'])
+        flash(f'Share "{name}" atualizado', 'success')
+    return redirect(url_for('shares_page'))
+
+@app.route('/admin/shares/delete', methods=['POST'])
+@admin_required
+def share_delete():
+    name = re.sub(r'[^\w\-]', '', request.form.get('name', '').strip())
+    shares = [s for s in parse_smb_shares() if s['name'] != name]
+    ok, err = _write_smb_conf(_rebuild_smb_conf(shares))
+    if not ok:
+        flash(f'Erro ao salvar smb.conf: {err}', 'error')
+    else:
+        run(['sudo', 'smbcontrol', 'smbd', 'reload-config'])
+        flash(f'Share "{name}" removido', 'success')
+    return redirect(url_for('shares_page'))
+
+@app.route('/admin/shares/reload', methods=['POST'])
+@admin_required
+def shares_reload():
+    rc, _, err = run(['sudo', 'systemctl', 'reload', 'smbd'])
+    if rc != 0:
+        flash(f'Erro ao recarregar smbd: {err}', 'error')
+    else:
+        flash('smbd recarregado', 'success')
+    return redirect(url_for('shares_page'))
+
+@app.route('/admin/shares/testparm')
+@admin_required
+def shares_testparm():
+    rc, out, err = run(['sudo', 'testparm', '-s'])
+    output = out + ('\n' + err if err else '')
+    return render_template_string(BASE_T + """
+{% block body %}
+<div class="page-title">🔍 testparm <a href="{{ url_for('shares_page') }}" class="btn btn-sm" style="margin-left:.75rem">← Voltar</a></div>
+<pre class="log-box">{{ output }}</pre>
+{% endblock %}""", output=output,
+        session=session, banner=get_banner(), active='shares', is_admin=True)
+
+# ── raid / discos ──────────────────────────────────────────────────────────────
+RAID_T = BASE_T + """
+{% block body %}
+<div class="page-title">💾 RAID / Discos</div>
+<div class="card">
+  <div class="card-header"><h3>Arrays RAID — /proc/mdstat</h3></div>
+  <div class="card-body">
+  {% if raid.arrays %}
+    {% for a in raid.arrays %}
+    <div style="margin-bottom:.75rem;padding:.75rem;background:var(--bg3);border-radius:6px;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.25rem">
+        <strong style="font-family:var(--mono)">{{ a.name }}</strong>
+        <span class="badge {{ 'badge-ok' if a.health == 'ok' else 'badge-err' }}">{{ 'Saudável' if a.health == 'ok' else 'DEGRADADO' }}</span>
+        <span class="badge badge-info">{{ a.level }}</span>
+        <span class="text-muted" style="font-size:.76rem">{{ a.status }}</span>
+        {% if a.progress %}<span class="text-muted" style="font-size:.76rem">{{ a.progress }}</span>{% endif %}
+      </div>
+      <div class="text-muted" style="font-size:.76rem;font-family:var(--mono)">{{ a.devices }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-muted" style="font-size:.82rem">Nenhum array RAID detectado</p>
+  {% endif %}
+  </div>
+</div>
+<div class="card">
+  <div class="card-header"><h3>💽 Discos e Partições</h3></div>
+  <table>
+    <thead><tr><th>Dispositivo</th><th>Tamanho</th><th>Usado</th><th>Livre</th><th>%</th><th>Ponto</th><th class="text-right">SMART</th></tr></thead>
+    <tbody>
+    {% for d in disks %}
+    <tr>
+      <td style="font-family:var(--mono);font-size:.76rem">{{ d.source }}</td>
+      <td>{{ d.size }}</td><td>{{ d.used }}</td><td>{{ d.avail }}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.4rem">
+          <div class="progress" style="width:55px"><div class="progress-bar {{ 'err' if d.pct|int > 85 else ('warn' if d.pct|int > 65 else '') }}" style="width:{{ d.pct }}%"></div></div>
+          {{ d.pct }}%
+        </div>
+      </td>
+      <td class="text-muted">{{ d.mount }}</td>
+      <td class="text-right">
+        <form method="post" action="{{ url_for('raid_smart') }}" style="display:inline">
+          <input type="hidden" name="disk" value="{{ d.source }}">
+          <button type="submit" class="btn btn-xs">🔬</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if smart_output %}
+<div class="card">
+  <div class="card-header"><h3>🔬 SMART — {{ smart_disk }}</h3></div>
+  <pre class="log-box">{{ smart_output }}</pre>
+</div>
+{% endif %}
+<div class="card">
+  <div class="card-header"><h3>/proc/mdstat (bruto)</h3></div>
+  <pre class="log-box" style="max-height:150px">{{ raid.raw }}</pre>
+</div>
+{% endblock %}"""
+
+@app.route('/admin/raid')
+@admin_required
+def raid_page():
+    return render_template_string(RAID_T,
+        raid=get_mdstat(), disks=get_disk_usage(), smart_output='', smart_disk='',
+        session=session, banner=get_banner(), active='raid', is_admin=True)
+
+@app.route('/admin/raid/smart', methods=['POST'])
+@admin_required
+def raid_smart():
+    disk = request.form.get('disk', '').strip()
+    smart_output = ''
+    smart_disk = disk
+    if disk and re.match(r'^/dev/[\w]+$', disk):
+        base_disk = re.sub(r'\d+$', '', disk)
+        rc, out, err = run(['sudo', 'smartctl', '-a', base_disk])
+        smart_output = out or err or 'Sem saída'
+    else:
+        smart_output = 'Dispositivo inválido'
+    return render_template_string(RAID_T,
+        raid=get_mdstat(), disks=get_disk_usage(),
+        smart_output=smart_output, smart_disk=smart_disk,
+        session=session, banner=get_banner(), active='raid', is_admin=True)
+
+# ── backups ────────────────────────────────────────────────────────────────────
+BACKUPS_T = BASE_T + """
+{% block body %}
+<div class="page-title">🗄️ Backups <small>{{ backup_dir }}</small></div>
+<div class="actions">
+  <form method="post" action="{{ url_for('backup_run') }}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Iniciando...'">
+    <button type="submit" class="btn btn-primary">▶ Executar Backup Agora</button>
+  </form>
+</div>
+<div class="card">
+  <div class="card-header"><h3>Histórico de Backups</h3><span class="text-muted" style="font-size:.76rem">{{ backups|length }} arquivos</span></div>
+  {% if backups %}
+  <table>
+    <thead><tr><th>Arquivo</th><th>Data</th><th>Tamanho</th><th class="text-right">Ação</th></tr></thead>
+    <tbody>
+    {% for b in backups %}
+    <tr>
+      <td style="font-family:var(--mono);font-size:.74rem">{{ b.name }}</td>
+      <td class="text-muted">{{ b.date }}</td>
+      <td class="text-muted">{{ b.size }}</td>
+      <td class="text-right">
+        <a href="{{ url_for('backup_download', filename=b.name) }}" class="btn btn-xs">⬇</a>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelBackup('{{ b.name }}')">🗑</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="card-body text-muted" style="font-size:.82rem">Nenhum backup em {{ backup_dir }}</div>
+  {% endif %}
+</div>
+<form method="post" id="fDelBackup" action="{{ url_for('backup_delete') }}" style="display:none">
+  <input type="hidden" name="filename" id="delBackupName">
+</form>
+<script>
+function confirmDelBackup(n){if(!confirm('Excluir "'+n+'"?'))return;document.getElementById('delBackupName').value=n;document.getElementById('fDelBackup').submit();}
+</script>
+{% endblock %}"""
+
+@app.route('/admin/backups')
+@admin_required
+def backups_page():
+    return render_template_string(BACKUPS_T,
+        backups=get_backups(), backup_dir=BACKUP_DIR,
+        session=session, banner=get_banner(), active='backups', is_admin=True)
+
+@app.route('/admin/backups/run', methods=['POST'])
+@admin_required
+def backup_run():
+    script = app.config.get('BACKUP_SCRIPT', '/opt/scripts/backup.sh')
+    if os.path.exists(script):
+        subprocess.Popen(['sudo', 'bash', script])
+        flash('Backup iniciado em background', 'success')
+    else:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        out_file = os.path.join(BACKUP_DIR, f'shares_{timestamp}.tar.gz')
+        subprocess.Popen(['sudo', 'tar', '-czf', out_file, SAMBA_ROOT])
+        flash(f'Backup iniciado → {out_file}', 'success')
+    return redirect(url_for('backups_page'))
+
+@app.route('/admin/backups/download/<filename>')
+@admin_required
+def backup_download(filename):
+    name = secure_filename(filename)
+    path = os.path.join(BACKUP_DIR, name)
+    if not os.path.exists(path):
+        abort(404)
+    return send_file(path, as_attachment=True, download_name=name)
+
+@app.route('/admin/backups/delete', methods=['POST'])
+@admin_required
+def backup_delete():
+    filename = secure_filename(request.form.get('filename', ''))
+    path = os.path.join(BACKUP_DIR, filename)
+    if os.path.exists(path) and os.path.abspath(path).startswith(os.path.abspath(BACKUP_DIR)):
+        os.unlink(path)
+        flash(f'"{filename}" removido', 'success')
+    else:
+        flash('Arquivo não encontrado', 'error')
+    return redirect(url_for('backups_page'))
+
+# ── logs ───────────────────────────────────────────────────────────────────────
+LOGS_T = BASE_T + """
+{% block body %}
+<div class="page-title">📋 Logs de Acesso Samba</div>
+<div class="actions">
+  <a href="?lines=50" class="btn {{ 'btn-primary' if lines==50 else '' }}">50 linhas</a>
+  <a href="?lines=200" class="btn {{ 'btn-primary' if lines==200 else '' }}">200 linhas</a>
+  <a href="?lines=500" class="btn {{ 'btn-primary' if lines==500 else '' }}">500 linhas</a>
+</div>
+<div class="card">
+  <div class="card-header"><h3>Logs recentes</h3></div>
+  <pre class="log-box">{{ logs }}</pre>
+</div>
+{% endblock %}"""
+
+@app.route('/admin/logs')
+@admin_required
+def logs_page():
+    lines = min(int(request.args.get('lines', 100)), 1000)
+    return render_template_string(LOGS_T, logs=get_samba_logs(lines), lines=lines,
+        session=session, banner=get_banner(), active='logs', is_admin=True)
+
+# ── change-pass própria senha ──────────────────────────────────────────────────
+CHPASS_T = BASE_T + """
+{% block body %}
+<div class="page-title">🔑 Alterar Minha Senha</div>
+<div style="max-width:380px">
+  <div class="card"><div class="card-header"><h3>Nova Senha</h3></div><div class="card-body">
+    <form method="post" action="{{ url_for('change_pass') }}">
+      <div class="form-group"><label>Senha Atual</label><input type="password" name="current_pass" required autocomplete="current-password"></div>
+      <div class="form-group"><label>Nova Senha</label><input type="password" name="new_pass" required minlength="4" autocomplete="new-password"></div>
+      <div class="form-group"><label>Confirmar Nova Senha</label><input type="password" name="confirm_pass" required autocomplete="new-password"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Salvar</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}"""
+
+@app.route('/change-pass', methods=['GET'])
+@login_required
+def change_pass_page():
+    is_admin = session.get('user') in ADMIN_USERS
+    return render_template_string(CHPASS_T,
+        session=session, banner=get_banner(), active='', is_admin=is_admin)
+
 @app.route('/change-pass', methods=['POST'])
 @login_required
 def change_pass():
@@ -575,47 +1521,52 @@ def change_pass():
     p = pam.pam()
     if not p.authenticate(user, current_pass):
         flash('Senha atual incorreta', 'error')
-        return redirect(url_for('admin'))
-    if len(new_pass) < 8:
-        flash('Mínimo 8 caracteres', 'error')
-        return redirect(url_for('admin'))
+        return redirect(url_for('change_pass_page'))
+    if len(new_pass) < 4:
+        flash('Mínimo 4 caracteres', 'error')
+        return redirect(url_for('change_pass_page'))
     if new_pass != confirm:
         flash('Senhas não coincidem', 'error')
-        return redirect(url_for('admin'))
-    proc = subprocess.run(
-        ['sudo', 'chpasswd'],
-        input=f'{user}:{new_pass}',
-        capture_output=True, text=True
-    )
-    if proc.returncode != 0:
-        flash('Erro ao alterar senha', 'error')
+        return redirect(url_for('change_pass_page'))
+    rc, _, err = run(['sudo', 'chpasswd'], input_=f'{user}:{new_pass}')
+    if rc != 0:
+        flash(f'Erro ao alterar senha: {err}', 'error')
     else:
-        subprocess.run(
-            ['sudo', 'smbpasswd', '-s', user],
-            input=f'{new_pass}\n{new_pass}\n',
-            capture_output=True, text=True
-        )
+        run(['sudo', 'smbpasswd', '-s', user], input_=f'{new_pass}\n{new_pass}\n')
         flash('Senha alterada com sucesso', 'success')
-    return redirect(url_for('admin'))
+    return redirect(url_for('change_pass_page'))
 
-@app.route('/banner-img/<filename>')
-def banner_img(filename):
-    name = secure_filename(filename)
-    path = os.path.join(BANNER_DIR, name)
-    if not os.path.exists(path):
-        abort(404)
-    mime, _ = mimetypes.guess_type(path)
-    return send_file(path, mimetype=mime or 'image/jpeg')
+# ── admin: configurações do portal ────────────────────────────────────────────
+ADMIN_T = BASE_T + """
+{% block body %}
+<div class="page-title">⚙️ Configurações do Portal</div>
+<div class="grid2">
+  <div class="card"><div class="card-header"><h3>Aviso / Notícia</h3></div><div class="card-body">
+    <form method="post" action="{{ url_for('admin_notice') }}">
+      <div class="form-group"><label>Texto (HTML simples)</label>
+        <textarea name="notice" rows="4">{{ notice }}</textarea></div>
+      <button class="btn btn-primary btn-sm">Salvar</button>
+    </form>
+  </div></div>
+  <div class="card"><div class="card-header"><h3>Banner do Portal</h3></div><div class="card-body">
+    {% if banner %}<img src="{{ banner }}" style="max-height:80px;border-radius:4px;margin-bottom:.75rem;display:block">{% endif %}
+    <form method="post" action="{{ url_for('admin_banner_upload') }}" enctype="multipart/form-data">
+      <div class="form-group"><label>Imagem (JPG/PNG/GIF/WebP)</label>
+        <input type="file" name="banner" accept="image/*"></div>
+      <button class="btn btn-primary btn-sm">Enviar</button>
+      {% if banner %}<a href="{{ url_for('admin_banner_delete') }}" class="btn btn-danger btn-sm" style="margin-left:.4rem">Remover</a>{% endif %}
+    </form>
+  </div></div>
+</div>
+{% endblock %}"""
 
 @app.route('/admin')
 @admin_required
 def admin():
     notice_file = os.path.join(PORTAL_DIR, 'notice.html')
     notice = open(notice_file).read() if os.path.exists(notice_file) else ''
-    return render_template_string(
-        ADMIN_T, notice=notice, session=session,
-        admin_users=ADMIN_USERS, banner=get_banner()
-    )
+    return render_template_string(ADMIN_T, notice=notice,
+        session=session, banner=get_banner(), active='admin', is_admin=True)
 
 @app.route('/admin/notice', methods=['POST'])
 @admin_required
@@ -636,12 +1587,11 @@ def admin_banner_upload():
         return redirect(url_for('admin'))
     ext = Path(secure_filename(f.filename)).suffix.lower()
     if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-        flash('Formato inválido (jpg/png/gif/webp)', 'error')
+        flash('Formato inválido', 'error')
         return redirect(url_for('admin'))
     for old in Path(BANNER_DIR).glob('banner.*'):
         old.unlink()
-    dest = os.path.join(BANNER_DIR, f'banner{ext}')
-    f.save(dest)
+    f.save(os.path.join(BANNER_DIR, f'banner{ext}'))
     flash('Banner atualizado', 'success')
     return redirect(url_for('admin'))
 
@@ -653,31 +1603,15 @@ def admin_banner_delete():
     flash('Banner removido', 'success')
     return redirect(url_for('admin'))
 
-@app.route('/admin/user-pass/<username>', methods=['POST'])
+# ── API JSON ───────────────────────────────────────────────────────────────────
+@app.route('/api/status')
 @admin_required
-def admin_user_pass(username):
-    username    = request.form.get('username', username).strip()
-    new_pass    = request.form.get('new_pass', '')
-    confirm     = request.form.get('confirm_pass', '')
-    if not username or not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
-        return jsonify({'ok': False, 'error': 'Usuário inválido'})
-    if len(new_pass) < 8:
-        return jsonify({'ok': False, 'error': 'Mínimo 8 caracteres'})
-    if new_pass != confirm:
-        return jsonify({'ok': False, 'error': 'Senhas não coincidem'})
-    proc = subprocess.run(
-        ['sudo', 'chpasswd'],
-        input=f'{username}:{new_pass}',
-        capture_output=True, text=True
-    )
-    if proc.returncode != 0:
-        return jsonify({'ok': False, 'error': f'chpasswd: {proc.stderr.strip()}'})
-    subprocess.run(
-        ['sudo', 'smbpasswd', '-s', username],
-        input=f'{new_pass}\n{new_pass}\n',
-        capture_output=True, text=True
-    )
-    return jsonify({'ok': True, 'message': f'Senha de {username} atualizada'})
+def api_status():
+    return jsonify({
+        'cpu': get_cpu(), 'mem': get_memory(),
+        'uptime': get_uptime(), 'connections': len(get_samba_connections()),
+        'disks': get_disk_usage(),
+    })
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)

@@ -2,359 +2,458 @@
 
 ## Visão Geral
 
-Servidor de arquivos Windows (SMB/CIFS) instalado via Ansible.  
-Inclui: RAID de dados, Samba 4, painel web de administração (PHP) e portal de autocadastro (Flask).
+Servidor de arquivos Windows (SMB/CIFS) instalado via Ansible em Debian 12/13.  
+Inclui: RAID de dados, Samba 4, portal web de administração (Flask + Nginx + TLS).
 
-- **IP padrão:** 172.14.29.11
-- **Painel web:** `https://172.14.29.11:8443`
-- **Compartilhamentos:** `\\172.14.29.11\NomeDoShare`
+- **IP padrão:** 192.168.2.11 (configurável no inventory)
+- **Portal web:** `https://192.168.2.11:8443`
+- **Compartilhamentos Windows:** `\\192.168.2.11\NomeDoShare`
+- **Compartilhamentos Linux:** `smb://192.168.2.11/NomeDoShare`
 
 ---
 
 ## 1. Instalação do Zero
 
-### Pré-requisitos
+### Pré-requisitos na máquina destino
 
-- Debian 12 ou 13 (instalação mínima)
-- Pelo menos 2 discos extras além do disco do SO (para o RAID)
-- Acesso root
-- Conexão com a internet (para baixar pacotes)
+- Debian 12 ou 13 (instalação mínima, sem desktop)
+- Pelo menos 2 discos adicionais além do disco do SO (para o RAID)
+- Acesso SSH com senha root ou chave pública
+- IP estático configurado
 
-### Passo a Passo
+### Pré-requisitos na máquina de controle (onde você roda o Ansible)
 
-```bash
-# 1. Instalar git e clonar o repositório
-apt install -y git
-git clone https://github.com/jpfagiani/smb.git /opt/smb
-cd /opt/smb
-
-# 2. Executar o bootstrap (detecta rede/discos e faz perguntas)
-bash bootstrap.sh
+```
+apt install ansible python3-pip
 ```
 
-O bootstrap faz automaticamente:
-1. Detecta interfaces de rede e sugere a correta
-2. Detecta discos disponíveis e exibe tamanho/modelo
-3. Pergunta: IP fixo, máscara, gateway, DNS, hostname, domínio
-4. Pergunta: login do administrador, senha Samba, senha do painel
-5. Pergunta: quais discos usar no RAID e qual nível (1/5/6/10)
-6. Mostra resumo e pede confirmação antes de iniciar
-7. Executa o Ansible e instala tudo
-
-> **Atenção:** todos os dados nos discos selecionados para o RAID serão apagados.
-
-### Níveis de RAID disponíveis
-
-| Nível | Mínimo de discos | Capacidade útil | Tolera falhas |
-|-------|-----------------|-----------------|---------------|
-| 1     | 2               | 1× disco        | N-1 discos    |
-| 5     | 3               | (N-1)× disco    | 1 disco       |
-| 6     | 4               | (N-2)× disco    | 2 discos      |
-| 10    | 4 (par)         | N/2× disco      | 1 por par     |
-
-### Reaplicar após mudanças no código
+### Passo 1 — Clonar o repositório
 
 ```bash
-cd /opt/smb
-git pull origin main
+git clone <url_do_repo> smb
+cd smb
+```
+
+### Passo 2 — Configurar o inventory
+
+Edite `inventory/hosts.ini`:
+
+```ini
+[samba_server]
+192.168.2.11 ansible_user=root ansible_ssh_pass=SUA_SENHA
+```
+
+Se usar chave SSH:
+```ini
+[samba_server]
+192.168.2.11 ansible_user=root ansible_ssh_private_key_file=~/.ssh/id_rsa
+```
+
+### Passo 3 — Configurar as variáveis
+
+Edite `group_vars/all.yml` com os valores do ambiente:
+
+```yaml
+server:
+  ip:          "192.168.2.11"
+  domain:      "cdpni.local"
+  admin_user:  "admin"
+
+raid:
+  devices:     ["/dev/sdb", "/dev/sdc"]   # discos para o RAID (NÃO o disco do SO)
+  level:       1                           # RAID-1 (espelho); use 5 para 3+ discos
+  mount:       "/mnt/raid"
+
+samba:
+  workgroup:   "CDPNI"
+  shares:
+    - name:      "compartilhado"
+      comment:   "Pasta compartilhada geral"
+      group:     "sambashare"
+    - name:      "restrito"
+      comment:   "Somente administração"
+      group:     "admins"
+
+portal:
+  user:        "cdpni-portal"
+  dir:         "/opt/cdpni-portal"
+  port:        8443
+
+backup:
+  dir:         "/opt/backups"
+  script:      "/opt/scripts/backup.sh"   # opcional; crie seu script aqui
+```
+
+### Passo 4 — Executar o playbook
+
+```bash
 ansible-playbook -i inventory/hosts.ini site.yml
 ```
 
-Para aplicar apenas parte da instalação:
+O playbook executa em ordem:
+1. **common** — pacotes base, locale, timezone, NTP
+2. **network** — hostname, /etc/hosts
+3. **storage** — cria RAID, formata, monta em /mnt/raid, adiciona ao /etc/fstab
+4. **samba** — instala smbd/nmbd, configura smb.conf, cria usuário admin
+5. **flask_portal** — instala Python venv, gunicorn, nginx, TLS autoassinado, serviço systemd
+6. **security** — nftables (firewall), fail2ban
+
+---
+
+## 2. Acesso ao Portal Web
+
+Abra no navegador:
+```
+https://192.168.2.11:8443
+```
+
+> O certificado TLS é autoassinado — o navegador pedirá confirmação de exceção de segurança. Isso é normal. Clique em "Avançado → Continuar".
+
+**Usuário padrão de administrador:** o valor de `server.admin_user` (padrão: `admin`).  
+A senha inicial é definida pelo Ansible — veja `group_vars/all.yml` ou redefina pelo próprio portal.
+
+---
+
+## 3. Funções do Portal
+
+### 3.1 Compartilhamentos (Arquivos)
+
+Acesso via menu lateral → **Compartilhamentos**.
+
+- Lista todos os shares Samba que o usuário tem permissão de acessar
+- Administradores veem todos os shares
+- Permite navegar, fazer upload, criar pastas, renomear e excluir arquivos
+
+### 3.2 Dashboard
+
+Acesso restrito a administradores. Mostra:
+
+| Indicador | Fonte |
+|-----------|-------|
+| CPU % | /proc (via `top -bn1`) |
+| RAM % | /proc/meminfo |
+| Uptime | /proc/uptime |
+| Sessões Samba ativas | `smbstatus --brief` |
+| Uso de disco | `df -h` |
+| Status de serviços | `systemctl is-active` |
+
+### 3.3 Usuários
+
+Cria, lista e remove usuários Linux + Samba em um único passo.
+
+**Criar usuário:**
+1. Clique em **➕ Novo Usuário**
+2. Preencha usuário, senha e confirme
+3. Selecione "Adicionar ao Samba: Sim" para permitir acesso via Windows
+4. Clique em **Criar**
+
+> O portal executa internamente: `useradd -m -s /bin/bash USER` + `chpasswd` + `smbpasswd -a -s USER`
+
+**Redefinir senha:**
+- Clique em **🔑 Senha** ao lado do usuário
+- Preencha a nova senha e confirme
+- Selecione se deve atualizar o Samba também
+
+**Excluir usuário:**
+- Clique em **🗑** ao lado do usuário
+- Remove do sistema Linux e do Samba (`userdel -r` + `smbpasswd -x`)
+- **Não é possível excluir o próprio usuário logado**
+
+### 3.4 Grupos
+
+Gerencia grupos Linux (usados pelo Samba para controle de acesso).
+
+**Criar grupo:**
+1. Clique em **➕ Novo Grupo**
+2. Informe o nome (letras minúsculas, números, _ e -)
+
+**Editar membros:**
+- Clique em **✏ Editar** ao lado do grupo
+- Liste os membros separados por vírgula: `user1,user2,user3`
+- Clique em **Salvar**
+
+> Para dar acesso a um share a um grupo, adicione `@nomedogrupo` em "Usuários/grupos válidos" na configuração do share.
+
+### 3.5 Shares Samba
+
+Gerencia os compartilhamentos diretamente no `smb.conf`.
+
+**Criar share:**
+1. Clique em **➕ Novo Share**
+2. Preencha: nome, caminho, usuários/grupos válidos
+3. Selecione somente leitura se necessário
+4. Se marcar "Criar diretório", o portal cria o diretório automaticamente
+5. O Samba é recarregado automaticamente após salvar
+
+**Editar share:**
+- Clique em **✏ Editar** para alterar qualquer configuração
+
+**Excluir share:**
+- Clique em **🗑** — remove apenas do smb.conf, não apaga os arquivos no disco
+
+**testparm:**
+- Clique em **🔍 testparm** para validar o smb.conf atual
+
+**Reload Samba:**
+- Clique em **🔄 Reload Samba** para forçar recarregamento sem reiniciar
+
+### 3.6 RAID / Discos
+
+Monitora arrays RAID e discos físicos.
+
+- **Arrays RAID** — lidos de `/proc/mdstat`; badge verde = saudável, vermelho = degradado
+- **Discos/Partições** — lista todas as partições com uso em percentual e barra visual
+- **SMART** — clique em **🔬** ao lado de qualquer disco para ver dados SMART do `smartctl`
+
+> Se o array aparecer como **DEGRADADO**, substitua o disco com falha com urgência.
+
+### 3.7 Backups
+
+Lista arquivos `.tar.gz` no diretório de backup (`/opt/backups` por padrão).
+
+**Executar backup manual:**
+- Clique em **▶ Executar Backup Agora**
+- Se existir `/opt/scripts/backup.sh`, ele é chamado via `sudo bash`
+- Se não existir, o portal faz um `tar -czf` dos shares automaticamente
+
+**Baixar backup:**
+- Clique em **⬇** ao lado do arquivo
+
+**Excluir backup:**
+- Clique em **🗑** ao lado do arquivo
+
+**Agendar backups automáticos:**
+Crie `/opt/scripts/backup.sh` e adicione ao cron do root:
+```bash
+# /etc/cron.d/cdpni-backup
+0 2 * * * root /opt/scripts/backup.sh >> /var/log/cdpni_backup.log 2>&1
+```
+
+### 3.8 Logs de Acesso
+
+Exibe os últimos registros dos logs do Samba:
+- `/var/log/samba/log.smbd`
+- `/var/log/samba/log.nmbd`
+- `/var/log/samba/audit.log` (se auditoria estiver habilitada)
+
+Selecione 50, 200 ou 500 linhas conforme necessário.
+
+### 3.9 Configurações do Portal
+
+- **Aviso/Notícia** — texto exibido na tela inicial para todos os usuários
+- **Banner** — imagem JPG/PNG exibida no topo do portal (máx. 160px altura)
+
+---
+
+## 4. Gerenciamento via Linha de Comando
+
+### Acessar o servidor
 
 ```bash
-# Só Samba (compartilhamentos, usuários)
-ansible-playbook -i inventory/hosts.ini site.yml --tags samba
-
-# Só firewall
-ansible-playbook -i inventory/hosts.ini site.yml --tags security
-
-# Só painel web
-ansible-playbook -i inventory/hosts.ini site.yml --tags php_panel
+ssh admin@192.168.2.11
 ```
 
----
-
-## 2. Compartilhamentos
-
-### Estrutura de acesso
-
-| Tipo | Quem acessa |
-|------|-------------|
-| `regular` | Grupo do share + jpfagiani + rcborges + supervisao + admin |
-| `restricted` | Grupo do share + jpfagiani + rcborges + admin (sem supervisao) |
-| `guest` | Qualquer um, sem senha, visível na rede |
-| `guest_hidden` | Qualquer um, sem senha, oculto na listagem |
-
-### Lista de compartilhamentos
-
-| Compartilhamento | Usuário Samba | Grupo Linux | Tipo | Observação |
-|-----------------|--------------|-------------|------|------------|
-| Administrativo | administrativo | grp_administrativo | regular | |
-| Aevp | aevp | grp_aevp | regular | |
-| Almoxarifado | almoxarifado | grp_almoxarifado | regular | |
-| Cadastro | cadastro | grp_cadastro | regular | |
-| Canil | canil | grp_canil | regular | |
-| Chefia_Turno_I | chefia1 | grp_chefia1 | regular | |
-| Chefia_Turno_II | chefia2 | grp_chefia2 | regular | |
-| Chefia_Turno_III | chefia3 | grp_chefia3 | regular | |
-| Chefia_Turno_IV | chefia4 | grp_chefia4 | regular | |
-| Cipa | cipa | grp_cipa | regular | |
-| Conexao_Familiar | conexao | grp_conexao | regular | |
-| Csd | csd | grp_csd | regular | |
-| Educacao | educacao | grp_educacao | regular | |
-| Financas | financas | grp_financas | regular | |
-| Inclusao | inclusao | grp_inclusao | regular | |
-| Infraestrutura | infra | grp_infra | regular | |
-| Nucleo_de_Pessoal | npessoal | grp_npessoal | regular | |
-| Planilhas | planilhas | grp_planilhas | regular | |
-| Portaria_Turno_I | portaria1 | grp_portaria1 | regular | |
-| Portaria_Turno_II | portaria2 | grp_portaria2 | regular | |
-| Portaria_Turno_III | portaria3 | grp_portaria3 | regular | |
-| Portaria_Turno_IV | portaria4 | grp_portaria4 | regular | |
-| Rol_de_Visitas | rol | grp_rol | regular | |
-| Saude | saude | grp_saude | regular | |
-| Simic | simic | grp_simic | regular | |
-| Sindicancia | sindicancia | grp_sindicancia | regular | |
-| Supervisao | supervisao | grp_supervisao | regular | |
-| Diretoria_Geral | dg | grp_dg | restricted | Sem acesso para supervisao |
-| Publico | publico | grp_publico | guest | Sem senha |
-| Scanner | scanner | grp_scanner | guest | Sem senha |
-| Papel_de_Parede | papel_de_parede | grp_papel_de_parede | guest | Sem senha |
-| CPD | cpd | grp_cpd | guest_hidden | Sem senha, oculto na listagem |
-
-### Caminho dos arquivos no servidor
-
-```
-/mnt/raid/shares/NomeDoShare/
-/mnt/raid/recycle/          ← lixeira global
-```
-
----
-
-## 3. Usuários e Permissões
-
-### Usuários especiais (pré-criados)
-
-| Usuário | Acesso |
-|---------|--------|
-| `jpfagiani` | Todos os compartilhamentos + admin Samba |
-| `rcborges` | Todos os compartilhamentos |
-| `cpd` | Todos os compartilhamentos + admin Samba |
-| `supervisao` | Todos exceto Diretoria_Geral |
-| `sambadmin` (ou nome escolhido) | Admin Samba (bypass de permissões) |
-
-### Usuários por compartilhamento
-
-Cada share tem um usuário e um grupo Linux/Samba. Nos shares com nomes longos o usuário foi abreviado para facilitar o login:
-
-| Share | Usuário Samba | Grupo Linux |
-|-------|--------------|-------------|
-| Administrativo | administrativo | grp_administrativo |
-| Aevp | aevp | grp_aevp |
-| Almoxarifado | almoxarifado | grp_almoxarifado |
-| Cadastro | cadastro | grp_cadastro |
-| Canil | canil | grp_canil |
-| Chefia_Turno_I | **chefia1** | grp_chefia1 |
-| Chefia_Turno_II | **chefia2** | grp_chefia2 |
-| Chefia_Turno_III | **chefia3** | grp_chefia3 |
-| Chefia_Turno_IV | **chefia4** | grp_chefia4 |
-| Cipa | cipa | grp_cipa |
-| Conexao_Familiar | **conexao** | grp_conexao |
-| Csd | csd | grp_csd |
-| Educacao | educacao | grp_educacao |
-| Financas | financas | grp_financas |
-| Inclusao | inclusao | grp_inclusao |
-| Infraestrutura | **infra** | grp_infra |
-| Nucleo_de_Pessoal | **npessoal** | grp_npessoal |
-| Planilhas | planilhas | grp_planilhas |
-| Portaria_Turno_I | **portaria1** | grp_portaria1 |
-| Portaria_Turno_II | **portaria2** | grp_portaria2 |
-| Portaria_Turno_III | **portaria3** | grp_portaria3 |
-| Portaria_Turno_IV | **portaria4** | grp_portaria4 |
-| Rol_de_Visitas | **rol** | grp_rol |
-| Saude | saude | grp_saude |
-| Simic | simic | grp_simic |
-| Sindicancia | sindicancia | grp_sindicancia |
-| Supervisao | supervisao | grp_supervisao |
-| Diretoria_Geral | **dg** | grp_dg |
-| Publico | publico | grp_publico |
-| Scanner | scanner | grp_scanner |
-| Papel_de_Parede | papel_de_parede | grp_papel_de_parede |
-| CPD | cpd | grp_cpd |
-
-Para acessar uma pasta no Windows, use o usuário Samba da tabela acima com a senha definida no bootstrap.
-
-### Gerenciar usuários via painel web
-
-Acesse `https://IP:8443` e use o menu **Usuários**.
-
-### Gerenciar usuários via linha de comando
+### Verificar status do Samba
 
 ```bash
-# Adicionar usuário ao Samba (deve existir no Linux primeiro)
-smbpasswd -a nomedousuario
-
-# Alterar senha Samba de um usuário
-smbpasswd nomedousuario
-
-# Desativar usuário no Samba
-smbpasswd -d nomedousuario
-
-# Reativar usuário no Samba
-smbpasswd -e nomedousuario
-
-# Listar usuários Samba cadastrados
-pdbedit -L
-
-# Listar com detalhes
-pdbedit -Lv
+sudo systemctl status smbd nmbd
+sudo smbstatus
 ```
 
----
+### Reiniciar serviços
 
-## 4. Painel Web de Administração
+```bash
+sudo systemctl restart smbd nmbd
+sudo systemctl restart cdpni-portal
+sudo systemctl restart nginx
+```
 
-- **URL:** `https://IP_DO_SERVIDOR:8443`
-- **Login padrão:** `admin`
-- **Senha:** definida no bootstrap
+### Ver logs em tempo real
 
-### Funcionalidades
+```bash
+sudo journalctl -fu smbd
+sudo journalctl -fu cdpni-portal
+sudo tail -f /var/log/samba/log.smbd
+```
 
-- **Dashboard:** conexões ativas em tempo real (smbstatus), últimos acessos com data/hora, status do RAID
-- **Compartilhamentos:** criar, editar, remover; ver último acesso, badge de compartilhamento guest
-- **Usuários:** criar, definir senha, ver grupos
-- **Grupos:** criar e gerenciar grupos
-
-> O certificado SSL é autoassinado — o navegador vai alertar; clique em "Avançado" e "Continuar".
-
----
-
-## 5. RAID
-
-### Verificar status
+### Verificar RAID
 
 ```bash
 cat /proc/mdstat
-mdadm --detail /dev/md0
+sudo mdadm --detail /dev/md0
 ```
 
-### Substituir um disco com falha
+### Verificar disco com falha
 
 ```bash
-# 1. Marcar como falho (se ainda não estiver)
-mdadm /dev/md0 --fail /dev/sdX
+sudo smartctl -a /dev/sdb
+sudo mdadm --detail /dev/md0 | grep -E "State|Failed"
+```
 
-# 2. Remover do array
-mdadm /dev/md0 --remove /dev/sdX
+### Substituir disco com falha no RAID-1
 
-# 3. Substituir o disco fisicamente, depois adicionar o novo
-mdadm /dev/md0 --add /dev/sdX
-
-# 4. Acompanhar reconstrução
+```bash
+# 1. Marcar disco com falha (se não automático)
+sudo mdadm /dev/md0 --fail /dev/sdb
+# 2. Remover disco
+sudo mdadm /dev/md0 --remove /dev/sdb
+# 3. Substituir fisicamente o disco, inicializar a partição
+sudo parted /dev/sdb mklabel gpt
+sudo parted /dev/sdb mkpart primary 0% 100%
+# 4. Adicionar novo disco ao array
+sudo mdadm /dev/md0 --add /dev/sdb1
+# 5. Acompanhar reconstrução
 watch cat /proc/mdstat
 ```
 
-### Verificar uso de espaço
+---
+
+## 5. Verificação Pós-instalação
+
+Após executar o playbook, verifique:
 
 ```bash
+# No servidor
+systemctl is-active smbd nmbd cdpni-portal nginx
+cat /proc/mdstat
 df -h /mnt/raid
-du -sh /mnt/raid/shares/*
+```
+
+```bash
+# No Windows (clientes)
+net use * \\192.168.2.11\compartilhado /user:admin
+```
+
+```bash
+# No Linux (clientes)
+smbclient //192.168.2.11/compartilhado -U admin
+```
+
+Portal web:
+```
+https://192.168.2.11:8443  → deve abrir a tela de login
 ```
 
 ---
 
-## 6. Firewall (nftables)
+## 6. Solução de Problemas
 
-Tabela `cdpni` — aceita conexões apenas de redes internas (10.x, 172.x, 192.168.x).
-
-| Porta | Protocolo | Serviço |
-|-------|-----------|---------|
-| 22 | TCP | SSH (rate-limit: 4 conn/min por IP) |
-| 139, 445 | TCP | Samba SMB/CIFS |
-| 137, 138 | UDP | NetBIOS |
-| 80, 443, 8443 | TCP | Painel web |
+### Portal não abre (Connection refused ou Timeout)
 
 ```bash
-# Ver regras ativas
-nft list ruleset
+sudo systemctl status cdpni-portal nginx
+sudo journalctl -u cdpni-portal --no-pager -n 50
+```
 
-# Reaplicar firewall
-ansible-playbook -i inventory/hosts.ini site.yml --tags security
+### Erro "Worker failed to boot" no portal
+
+```bash
+source /opt/cdpni-portal/venv/bin/activate
+python -c "import pam; import flask; import six; print('OK')"
+# Se falhar, reinstalar dependências:
+pip install flask==3.1.0 python-pam==2.0.2 gunicorn==23.0.0 werkzeug==3.1.3 six
+```
+
+### Usuário não consegue acessar o share pelo Windows
+
+```bash
+# Verificar se o usuário tem senha Samba
+sudo pdbedit -L | grep USUARIO
+# Resetar senha Samba
+echo -e "NOVASENHA\nNOVASENHA" | sudo smbpasswd -s USUARIO
+```
+
+### Permissão negada ao criar arquivos no share
+
+```bash
+# Verificar permissões do diretório
+ls -la /mnt/raid/shares/
+# Corrigir
+sudo chmod 0775 /mnt/raid/shares/NOME_DO_SHARE
+sudo chown root:sambashare /mnt/raid/shares/NOME_DO_SHARE
+```
+
+### RAID degradado
+
+```bash
+cat /proc/mdstat
+sudo mdadm --detail /dev/md0
+# Ver qual disco falhou e substituir conforme seção 4
 ```
 
 ---
 
-## 7. Logs e Diagnóstico
+## 7. Segurança
+
+### Firewall (nftables)
+
+Portas abertas por padrão:
+- **22** — SSH (altere para outra porta em produção)
+- **445** — SMB (Samba)
+- **139** — NetBIOS (Samba legado)
+- **8443** — Portal web HTTPS
+
+### fail2ban
+
+Protege contra tentativas de força bruta:
+- SSH: bloqueio após 5 tentativas em 10 min
+- Portal web: bloqueio após 5 tentativas em 10 min
 
 ```bash
-# Conexões ativas agora
-smbstatus
+# Ver IPs banidos
+sudo fail2ban-client status sshd
+sudo fail2ban-client status cdpni-portal
 
-# Sessões abertas por share
-smbstatus -S
+# Desbanir um IP
+sudo fail2ban-client set sshd unbanip 192.168.1.100
+```
 
-# Log do Samba
-tail -50 /var/log/samba/log.smbd
+### TLS do Portal
 
-# Auditoria de acesso (quem abriu/leu/escreveu o quê)
-grep smbd_audit /var/log/syslog | tail -30
+O certificado autoassinado é gerado pelo Ansible. Para usar um certificado válido (Let's Encrypt ou CA própria), substitua em:
+- `/etc/ssl/cdpni/portal.crt`
+- `/etc/ssl/cdpni/portal.key`
 
-# Status dos serviços
-systemctl status smbd nmbd
-
-# Reiniciar Samba
-systemctl restart smbd nmbd
+E recarregue o Nginx:
+```bash
+sudo systemctl reload nginx
 ```
 
 ---
 
-## 8. Procedimentos Comuns
+## 8. Atualizar o Portal Após Mudanças no Repositório
 
-### Acessar compartilhamento pelo Windows
-
-No Windows Explorer:
-```
-\\172.14.29.11\NomeDoShare
-```
-
-Ou mapear unidade: clique direito em "Este PC" → "Mapear unidade de rede".
-
-### Acessar compartilhamentos guest (sem senha)
-
-Basta navegar para `\\172.14.29.11` — Publico, Scanner e Papel_de_Parede aparecem sem pedir senha.
-
-### Adicionar novo usuário a um compartilhamento
-
+No servidor:
 ```bash
-# Criar usuário Linux (sem home, sem shell)
-useradd -M -s /sbin/nologin -G nome_do_grupo novodeusuario
-
-# Registrar no Samba com senha
-smbpasswd -a novodeusuario
+cd /opt/cdpni-portal
+sudo -u cdpni-portal git pull    # se instalado via git
+# ou copie o novo app.py e reinicie:
+sudo systemctl restart cdpni-portal
 ```
 
-### Alterar senha de um usuário
-
+Via Ansible (recomendado):
 ```bash
-smbpasswd nomedousuario
+ansible-playbook -i inventory/hosts.ini site.yml --tags flask_portal
 ```
-
-### Acessar lixeira
-
-```
-\\172.14.29.11\Recycle
-```
-
-Somente `sambadmin`, `jpfagiani` e `cpd` têm acesso.
 
 ---
 
-## 9. Backup
+## 9. Estrutura do Repositório
 
-O RAID protege contra falha de disco mas **não substitui backup**. Faça cópias externas regularmente.
-
-```bash
-# Backup manual para outro servidor
-rsync -av /mnt/raid/shares/ usuario@destino:/backup/samba/
+```
+smb/
+├── ansible.cfg
+├── inventory/
+│   └── hosts.ini          ← endereços dos servidores
+├── group_vars/
+│   └── all.yml            ← variáveis globais (IP, discos, shares...)
+├── site.yml               ← playbook principal
+├── roles/
+│   ├── common/            ← pacotes base, locale, NTP
+│   ├── network/           ← hostname, /etc/hosts
+│   ├── storage/           ← RAID, formatação, montagem
+│   ├── samba/             ← smb.conf, usuários Samba
+│   ├── flask_portal/      ← portal web (app.py, nginx, systemd)
+│   └── security/          ← nftables, fail2ban
+└── MANUAL.md              ← este arquivo
 ```

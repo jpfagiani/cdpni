@@ -8,3 +8,5 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE   = True
 PERMANENT_SESSION_LIFETIME = 3600
 MAX_CONTENT_LENGTH = 512 * 1024 * 1024
+BACKUP_DIR     = '{{ backup.dir | default("/opt/backups") }}'
+BACKUP_SCRIPT  = '{{ backup.script | default("/opt/scripts/backup.sh") }}'

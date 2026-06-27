@@ -77,7 +77,7 @@
   ansible.builtin.copy:
     dest: /etc/sudoers.d/cdpni-portal
     content: |
-      {{ portal.user }} ALL=(root) NOPASSWD: /usr/sbin/chpasswd, /usr/bin/smbpasswd
+      {{ portal.user }} ALL=(root) NOPASSWD: /usr/sbin/chpasswd, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tail
     validate: visudo -cf %s
     mode: "0440"
 
