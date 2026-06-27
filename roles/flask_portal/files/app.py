@@ -445,14 +445,15 @@ BASE_T = r"""<!DOCTYPE html><html lang="pt-BR">
 {% block body %}{% endblock %}
 </div>
 </div>
-{% else %}
-{% block nobody %}{% endblock %}
 {% endif %}
 </body></html>
 """
 
-LOGIN_T = BASE_T + """
-{% block nobody %}
+LOGIN_T = """<!DOCTYPE html><html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CDPNI — Login</title>
+<style>""" + CSS + """</style></head>
+<body>
 <div class="login-wrap"><div class="login-box">
   <div class="login-header"><div class="logo">🖧</div><h2>CDPNI</h2><p style="color:var(--muted);font-size:.8rem">Portal do Servidor</p></div>
   <form method="post" class="login-body">
@@ -462,7 +463,7 @@ LOGIN_T = BASE_T + """
     <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">Entrar</button>
   </form>
 </div></div>
-{% endblock %}"""
+</body></html>"""
 
 # ── auth ───────────────────────────────────────────────────────────────────────
 @app.route('/login', methods=['GET', 'POST'])
