@@ -193,7 +193,6 @@ valid_pass() {
     [[ "$p" =~ [A-Z] ]] || return 1
     [[ "$p" =~ [a-z] ]] || return 1
     [[ "$p" =~ [0-9] ]] || return 1
-    [[ "$p" =~ [^a-zA-Z0-9] ]] || return 1
     return 0
 }
 
@@ -248,12 +247,12 @@ done
 
 # Senha do Samba (digitada, não exibida)
 echo ""
-echo -e "  ${DIM}Requisitos: mínimo 8 caracteres, maiúsculas, minúsculas, números e símbolo especial.${NC}"
+echo -e "  ${DIM}Requisitos: mínimo 8 caracteres, letras maiúsculas, minúsculas e números.${NC}"
 while true; do
     ask "Senha padrão dos usuários Samba:"
     read -rsp "  > " SAMBA_PASS; echo ""
     if ! valid_pass "$SAMBA_PASS"; then
-        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc., número e símbolo (!@#\$...)."
+        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc. e número."
         continue
     fi
     ask "Confirme a senha:"
@@ -269,7 +268,7 @@ while true; do
     ask "Senha do painel web (admin) [porta 8443]:"
     read -rsp "  > " PANEL_PASS; echo ""
     if ! valid_pass "$PANEL_PASS"; then
-        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc., número e símbolo (!@#\$...)."
+        warn "Senha fraca. Use ao menos 8 chars com maiúsc., minúsc. e número."
         continue
     fi
     ask "Confirme a senha:"
