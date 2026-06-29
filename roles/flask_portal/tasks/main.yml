@@ -1,4 +1,9 @@
 ---
+- name: Atualizar cache apt
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
 - name: Instalar nginx e dependências Python
   ansible.builtin.apt:
     name:
@@ -19,13 +24,15 @@
     - /etc/nginx/sites-enabled
 
 - name: Garantir que nginx.conf inclui sites-enabled
-  ansible.builtin.lineinfile:
+  ansible.builtin.blockinfile:
     path: /etc/nginx/nginx.conf
-    regexp: 'sites-enabled'
-    line: "    include /etc/nginx/sites-enabled/*;"
-    insertafter: 'include /etc/nginx/conf.d'
+    marker: "# {mark} CDPNI sites-enabled"
+    insertbefore: '^}'
+    block: |
+        include /etc/nginx/sites-enabled/*;
     state: present
-  notify: reload nginx
+  when: >
+    lookup('file', '/etc/nginx/nginx.conf') is not search('sites-enabled')
 
 - name: Criar usuário de serviço do portal
   ansible.builtin.user:
