@@ -7,8 +7,11 @@ RequiresMountsFor={{ raid.mount }}
 Type=simple
 User={{ portal.user }}
 Group={{ portal.user }}
+SupplementaryGroups=shadow
 WorkingDirectory={{ portal.dir }}
 Environment=PYTHONDONTWRITEBYTECODE=1
+AmbientCapabilities=CAP_SETUID CAP_SETGID
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID
 ExecStart={{ portal.dir }}/venv/bin/gunicorn \
     --workers 3 \
     --bind 127.0.0.1:{{ portal.port }} \
