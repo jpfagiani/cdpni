@@ -84,9 +84,44 @@ def run(cmd: list, input_: str | None = None) -> tuple[int, str, str]:
     proc = subprocess.run(cmd, input=input_, capture_output=True, text=True)
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
+ADMIN_GROUP = 'cdpni-admins'
+
+def get_admin_group_members() -> set:
+    try:
+        with open('/etc/group') as f:
+            for line in f:
+                parts = line.strip().split(':')
+                if parts[0] == ADMIN_GROUP and len(parts) == 4:
+                    return set(m for m in parts[3].split(',') if m)
+    except Exception:
+        pass
+    return set()
+
+def get_user_share_perms(username: str) -> dict:
+    """Retorna dict {share_path: 'rwx'} para o usuário via getfacl."""
+    perms = {}
+    try:
+        shares = parse_smb_shares()
+        for s in shares:
+            path = s.get('path', '')
+            if not path or not os.path.isdir(path):
+                continue
+            out = subprocess.run(['getfacl', '-p', path],
+                capture_output=True, text=True).stdout
+            for line in out.splitlines():
+                if line.startswith(f'user:{username}:'):
+                    perms[s['name']] = line.split(':')[2]
+                    break
+            else:
+                perms[s['name']] = ''
+    except Exception:
+        pass
+    return perms
+
 def get_system_users() -> list[dict]:
     users = []
     NOLOGIN = {'/usr/sbin/nologin', '/bin/false', '/sbin/nologin'}
+    admins  = get_admin_group_members() | ADMIN_USERS
     try:
         with open('/etc/passwd') as f:
             for line in f:
@@ -97,12 +132,14 @@ def get_system_users() -> list[dict]:
                 if uid < 1000 or uid > 60000:
                     continue
                 shell = parts[6]
+                name  = parts[0]
                 users.append({
-                    'name':   parts[0],
-                    'uid':    uid,
-                    'home':   parts[5],
-                    'shell':  shell,
-                    'active': shell not in NOLOGIN,
+                    'name':    name,
+                    'uid':     uid,
+                    'home':    parts[5],
+                    'shell':   shell,
+                    'active':  shell not in NOLOGIN,
+                    'is_admin': name in admins,
                 })
     except Exception:
         pass
@@ -869,13 +906,19 @@ USERS_T = BASE_T.replace("__BODY__", """
 <div class="card">
   <div class="card-header"><h3>Usuários</h3><span class="text-muted" style="font-size:.76rem">{{ users|length }}</span></div>
   <table>
-    <thead><tr><th>Usuário</th><th>UID</th><th>Home</th><th>Status</th><th class="text-right">Ações</th></tr></thead>
+    <thead><tr><th>Usuário</th><th>UID</th><th>Papel</th><th>Status</th><th class="text-right">Ações</th></tr></thead>
     <tbody>
     {% for u in users %}
     <tr style="opacity:{% if u.active %}1{% else %}.55{% endif %}">
       <td><strong>{{ u.name }}</strong></td>
       <td class="text-muted">{{ u.uid }}</td>
-      <td class="text-muted" style="font-family:var(--mono);font-size:.74rem">{{ u.home }}</td>
+      <td>
+        {% if u.is_admin %}
+          <span style="color:var(--accent);font-size:.74rem;font-weight:600">★ Admin</span>
+        {% else %}
+          <span style="color:var(--muted);font-size:.74rem">Comum</span>
+        {% endif %}
+      </td>
       <td>
         {% if u.active %}
           <span style="color:var(--success);font-size:.75rem;font-weight:600">● Ativo</span>
@@ -885,11 +928,17 @@ USERS_T = BASE_T.replace("__BODY__", """
       </td>
       <td class="text-right nowrap">
         <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">🔑 Senha</button>
+        <button class="btn btn-xs" onclick="openPerms('{{ u.name }}')">🔒 Permissões</button>
         {% if u.name != session.user %}
-          {% if u.active %}
-            <button class="btn btn-xs btn-warn" onclick="confirmToggle('{{ u.name }}','deactivate')">⏸ Inativar</button>
+          {% if u.is_admin %}
+            <button class="btn btn-xs btn-warn" onclick="confirmRole('{{ u.name }}','comum')">↓ Comum</button>
           {% else %}
-            <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">▶ Ativar</button>
+            <button class="btn btn-xs btn-success" onclick="confirmRole('{{ u.name }}','admin')">↑ Admin</button>
+          {% endif %}
+          {% if u.active %}
+            <button class="btn btn-xs btn-warn" onclick="confirmToggle('{{ u.name }}','deactivate')">⏸</button>
+          {% else %}
+            <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">▶</button>
           {% endif %}
           <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">🗑</button>
         {% endif %}
@@ -899,12 +948,18 @@ USERS_T = BASE_T.replace("__BODY__", """
     </tbody>
   </table>
 </div>
+
 <div class="modal-bg" id="mNewUser"><div class="modal"><h3>Novo Usuário</h3>
   <form method="post" action="{{ url_for('user_create') }}">
     <div class="form-group"><label>Usuário (letras minúsculas, números, _ e -)</label>
       <input type="text" name="username" pattern="[a-z][a-z0-9_-]{0,31}" required autofocus></div>
     <div class="form-group"><label>Senha</label><input type="password" name="password" minlength="4" required></div>
     <div class="form-group"><label>Confirmar Senha</label><input type="password" name="confirm" required></div>
+    <div class="form-group"><label>Papel</label>
+      <select name="role">
+        <option value="comum">Usuário Comum</option>
+        <option value="admin">Administrador do Painel</option>
+      </select></div>
     <div class="form-group"><label>Adicionar ao Samba</label>
       <select name="add_samba"><option value="1">Sim</option><option value="0">Não</option></select></div>
     <div class="modal-footer">
@@ -912,6 +967,7 @@ USERS_T = BASE_T.replace("__BODY__", """
       <button type="submit" class="btn btn-primary">Criar</button>
     </div>
   </form></div></div>
+
 <div class="modal-bg" id="mResetPass"><div class="modal"><h3>Redefinir Senha</h3>
   <form method="post" action="{{ url_for('user_passwd') }}">
     <input type="hidden" name="username" id="rpUsername">
@@ -925,6 +981,21 @@ USERS_T = BASE_T.replace("__BODY__", """
       <button type="submit" class="btn btn-primary">Redefinir</button>
     </div>
   </form></div></div>
+
+<div class="modal-bg" id="mPerms"><div class="modal" style="min-width:420px"><h3>Permissões por Compartilhamento</h3>
+  <form method="post" action="{{ url_for('user_permissions') }}" id="fPerms">
+    <input type="hidden" name="username" id="permsUsername">
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Usuário: <strong id="permsUserLabel"></strong></p>
+    <table style="width:100%">
+      <thead><tr><th>Compartilhamento</th><th style="text-align:center">Ler</th><th style="text-align:center">Escrever</th><th style="text-align:center">Executar</th></tr></thead>
+      <tbody id="permsBody"></tbody>
+    </table>
+    <div class="modal-footer" style="margin-top:1rem">
+      <button type="button" class="btn" onclick="closeModal('mPerms')">Cancelar</button>
+      <button type="submit" class="btn btn-primary">Salvar</button>
+    </div>
+  </form></div></div>
+
 <form method="post" id="fDelUser" action="{{ url_for('user_delete') }}" style="display:none">
   <input type="hidden" name="username" id="delUsername">
 </form>
@@ -932,17 +1003,48 @@ USERS_T = BASE_T.replace("__BODY__", """
   <input type="hidden" name="username" id="toggleUsername">
   <input type="hidden" name="action"   id="toggleAction">
 </form>
+<form method="post" id="fRoleUser" action="{{ url_for('user_role') }}" style="display:none">
+  <input type="hidden" name="username" id="roleUsername">
+  <input type="hidden" name="role"     id="roleValue">
+</form>
+
 <script>
+var SHARES = {{ shares_json|safe }};
+var USER_PERMS = {{ user_perms_json|safe }};
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 function openResetPass(u){document.getElementById('rpUsername').value=u;document.getElementById('rpUserLabel').value=u;document.getElementById('mResetPass').classList.add('open');}
 function confirmDelUser(u){if(!confirm('Excluir usuário "'+u+'"? Remove do sistema e do Samba.'))return;document.getElementById('delUsername').value=u;document.getElementById('fDelUser').submit();}
 function confirmToggle(u,action){
-  var msg = action==='activate' ? 'Ativar usuário "'+u+'"?' : 'Inativar usuário "'+u+'"? O acesso ao Samba será bloqueado.';
+  var msg=action==='activate'?'Ativar usuário "'+u+'"?':'Inativar "'+u+'"? Acesso ao Samba será bloqueado.';
   if(!confirm(msg))return;
   document.getElementById('toggleUsername').value=u;
   document.getElementById('toggleAction').value=action;
   document.getElementById('fToggleUser').submit();
+}
+function confirmRole(u,role){
+  var msg=role==='admin'?'Promover "'+u+'" a Administrador?':'Rebaixar "'+u+'" para Usuário Comum?';
+  if(!confirm(msg))return;
+  document.getElementById('roleUsername').value=u;
+  document.getElementById('roleValue').value=role;
+  document.getElementById('fRoleUser').submit();
+}
+function openPerms(u){
+  document.getElementById('permsUsername').value=u;
+  document.getElementById('permsUserLabel').textContent=u;
+  var perms=USER_PERMS[u]||{};
+  var tbody=document.getElementById('permsBody');
+  tbody.innerHTML='';
+  SHARES.forEach(function(s){
+    var p=perms[s]||'';
+    tbody.innerHTML+='<tr>'
+      +'<td><strong>'+s+'</strong></td>'
+      +'<td style="text-align:center"><input type="checkbox" name="perm_'+s+'_r"'+(p.includes('r')?' checked':'')+' value="1"></td>'
+      +'<td style="text-align:center"><input type="checkbox" name="perm_'+s+'_w"'+(p.includes('w')?' checked':'')+' value="1"></td>'
+      +'<td style="text-align:center"><input type="checkbox" name="perm_'+s+'_x"'+(p.includes('x')?' checked':'')+' value="1"></td>'
+      +'</tr>';
+  });
+  document.getElementById('mPerms').classList.add('open');
 }
 </script>
 """)
@@ -950,7 +1052,13 @@ function confirmToggle(u,action){
 @app.route('/admin/users')
 @admin_required
 def users_page():
-    return render_template_string(USERS_T, users=get_system_users(),
+    users  = get_system_users()
+    shares = parse_smb_shares()
+    share_names = [s['name'] for s in shares if s.get('path') and s['name'] not in ('global','homes','printers')]
+    user_perms  = {u['name']: get_user_share_perms(u['name']) for u in users}
+    return render_template_string(USERS_T, users=users,
+        shares_json=json.dumps(share_names),
+        user_perms_json=json.dumps(user_perms),
         session=session, banner=get_banner(), active='users', is_admin=True)
 
 @app.route('/admin/users/create', methods=['POST'])
@@ -960,6 +1068,7 @@ def user_create():
     password  = request.form.get('password', '')
     confirm   = request.form.get('confirm', '')
     add_samba = request.form.get('add_samba', '1') == '1'
+    is_admin  = request.form.get('role', 'comum') == 'admin'
     if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
         flash('Nome de usuário inválido', 'error')
         return redirect(url_for('users_page'))
@@ -976,7 +1085,50 @@ def user_create():
     run(['sudo', 'chpasswd'], input_=f'{username}:{password}')
     if add_samba:
         run(['sudo', 'smbpasswd', '-a', '-s', username], input_=f'{password}\n{password}\n')
-    flash(f'Usuário "{username}" criado', 'success')
+    if is_admin:
+        run(['sudo', 'groupadd', '-f', ADMIN_GROUP])
+        run(['sudo', 'gpasswd', '-a', username, ADMIN_GROUP])
+    flash(f'Usuário "{username}" criado como {"administrador" if is_admin else "comum"}', 'success')
+    return redirect(url_for('users_page'))
+
+@app.route('/admin/users/role', methods=['POST'])
+@admin_required
+def user_role():
+    username = request.form.get('username', '').strip()
+    role     = request.form.get('role', 'comum')
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+        flash('Usuário inválido', 'error')
+        return redirect(url_for('users_page'))
+    run(['sudo', 'groupadd', '-f', ADMIN_GROUP])
+    if role == 'admin':
+        run(['sudo', 'gpasswd', '-a', username, ADMIN_GROUP])
+        flash(f'"{username}" promovido a administrador', 'success')
+    else:
+        run(['sudo', 'gpasswd', '-d', username, ADMIN_GROUP])
+        flash(f'"{username}" alterado para usuário comum', 'success')
+    return redirect(url_for('users_page'))
+
+@app.route('/admin/users/permissions', methods=['POST'])
+@admin_required
+def user_permissions():
+    username = request.form.get('username', '').strip()
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+        flash('Usuário inválido', 'error')
+        return redirect(url_for('users_page'))
+    shares = parse_smb_shares()
+    for s in shares:
+        path = s.get('path', '')
+        if not path or not os.path.isdir(path):
+            continue
+        r = 'r' if request.form.get(f'perm_{s["name"]}_r') else '-'
+        w = 'w' if request.form.get(f'perm_{s["name"]}_w') else '-'
+        x = 'x' if request.form.get(f'perm_{s["name"]}_x') else '-'
+        perm_str = f'{r}{w}{x}'.replace('-', '')
+        if perm_str:
+            run(['sudo', 'setfacl', '-m', f'u:{username}:{perm_str}', path])
+        else:
+            run(['sudo', 'setfacl', '-x', f'u:{username}', path])
+    flash(f'Permissões de "{username}" atualizadas', 'success')
     return redirect(url_for('users_page'))
 
 @app.route('/admin/users/passwd', methods=['POST'])
