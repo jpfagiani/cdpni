@@ -49,8 +49,10 @@
     - { q: postfix/mailname,         v: "{{ server.hostname }}", t: string }
 
 - name: Definir hostname
-  ansible.builtin.hostname:
-    name: "{{ server.hostname }}"
+  ansible.builtin.shell: |
+    hostnamectl set-hostname "{{ server.hostname }}" 2>/dev/null || \
+    echo "{{ server.hostname }}" > /etc/hostname && hostname "{{ server.hostname }}"
+  changed_when: false
 
 - name: Configurar /etc/hosts
   ansible.builtin.template:
