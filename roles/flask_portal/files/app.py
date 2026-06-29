@@ -85,11 +85,8 @@ def run(cmd: list, input_: str | None = None) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 def set_linux_password(username: str, password: str) -> tuple[int, str]:
-    """Define senha Linux via openssl passwd SHA-512, evitando PAM."""
-    rc, hashed, err = run(['openssl', 'passwd', '-6', password])
-    if rc != 0 or not hashed:
-        return rc, err
-    rc, _, err = run(['sudo', 'usermod', '-p', hashed.strip(), username])
+    """Define senha Linux via wrapper script privilegiado."""
+    rc, _, err = run(['sudo', '/usr/local/bin/cdpni-setpass', username, password])
     return rc, err
 
 ADMIN_GROUP = 'cdpni-admins'
