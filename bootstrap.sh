@@ -161,9 +161,12 @@ echo -e "  ${DIM}$(printf '─%.0s' {1..65})${NC}"
 declare -a AVAIL_DISKS=()
 while IFS= read -r _disk; do
     _size=$(lsblk -dno SIZE "$_disk" 2>/dev/null || echo "?")
+    _bytes=$(lsblk -dno SIZE -b "$_disk" 2>/dev/null || echo "0")
     _model=$(cat /sys/block/"$(basename "$_disk")"/device/model 2>/dev/null | xargs 2>/dev/null || echo "N/D")
     if [[ "$_disk" == "$SYS_DISK" ]]; then
         printf "  ${YELLOW}%-5s %-12s %-10s %-24s %-10s${NC}\n" "[SO]" "$_disk" "$_size" "${_model:0:22}" "Sistema"
+    elif [[ "${_bytes:-0}" -eq 0 ]]; then
+        printf "  ${YELLOW}%-5s %-12s %-10s %-24s %-10s${NC}\n" "[--]" "$_disk" "0B" "${_model:0:22}" "Sem mídia"
     else
         AVAIL_DISKS+=("$_disk")
         _idx=${#AVAIL_DISKS[@]}
