@@ -503,7 +503,7 @@ def login():
         password = request.form.get('password', '')
         req_user = user
         p = pam.pam()
-        if p.authenticate(user, password):
+        if p.authenticate(user, password, service='cdpni-portal'):
             import grp as grp_mod
             groups = []
             try:
@@ -1546,7 +1546,7 @@ def change_pass():
     new_pass     = request.form.get('new_pass', '')
     confirm      = request.form.get('confirm_pass', '')
     p = pam.pam()
-    if not p.authenticate(user, current_pass):
+    if not p.authenticate(user, current_pass, service='cdpni-portal'):
         flash('Senha atual incorreta', 'error')
         return redirect(url_for('change_pass_page'))
     if len(new_pass) < 4:
