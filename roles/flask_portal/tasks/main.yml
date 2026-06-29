@@ -34,6 +34,16 @@
     shell: /usr/sbin/nologin
     home: "{{ portal.dir }}"
     create_home: false
+    groups: shadow
+    append: true
+
+- name: Criar serviço PAM exclusivo para o portal (sem winbind)
+  ansible.builtin.copy:
+    dest: /etc/pam.d/cdpni-portal
+    content: |
+      auth    required    pam_unix.so
+      account required    pam_unix.so
+    mode: "0644"
 
 - name: Criar diretório do portal
   ansible.builtin.file:
