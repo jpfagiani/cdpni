@@ -459,7 +459,7 @@ BASE_T = """<!DOCTYPE html><html lang="pt-BR">
 {% with msgs = get_flashed_messages(with_categories=True) %}
   {% for cat, msg in msgs %}<div class="flash flash-{{ cat }}">{{ msg }}</div>{% endfor %}
 {% endwith %}
-{% block body %}{% endblock %}
+__BODY__
 </div>
 </div>
 <div class="statusbar">
@@ -529,8 +529,7 @@ def logout():
     return redirect(url_for('login'))
 
 # ── arquivos ───────────────────────────────────────────────────────────────────
-INDEX_T = BASE_T + """
-{% block body %}
+INDEX_T = BASE_T.replace("__BODY__", """
 <div class="page-title">🗂️ Compartilhamentos</div>
 {% if notice %}<div class="flash flash-warning">{{ notice|safe }}</div>{% endif %}
 <div class="disks-grid">
@@ -542,7 +541,7 @@ INDEX_T = BASE_T + """
   <p class="text-muted">Nenhum compartilhamento disponível.</p>
 {% endfor %}
 </div>
-{% endblock %}"""
+""")
 
 @app.route('/')
 @login_required
@@ -554,8 +553,7 @@ def index():
     return render_template_string(INDEX_T, disks=disks, notice=notice,
         session=session, banner=get_banner(), active='files', is_admin=is_admin)
 
-BROWSE_T = BASE_T + """
-{% block body %}
+BROWSE_T = BASE_T.replace("__BODY__", """
 <div style="font-size:.78rem;color:var(--muted);margin-bottom:.75rem">
   <a href="{{ url_for('index') }}" style="color:var(--muted)">Início</a> /
   <a href="{{ url_for('browse', disk=disk, rel='') }}" style="color:var(--muted)">{{ disk }}</a>
@@ -628,7 +626,7 @@ function confirmDelete(name,type){
   document.getElementById('fDel').submit();
 }
 </script>
-{% endblock %}"""
+""")
 
 @app.route('/browse/<disk>/', defaults={'rel': ''})
 @app.route('/browse/<disk>/<path:rel>')
@@ -759,8 +757,7 @@ def banner_img(filename):
     return send_file(path, mimetype=mime or 'image/jpeg')
 
 # ── dashboard ──────────────────────────────────────────────────────────────────
-DASHBOARD_T = BASE_T + """
-{% block body %}
+DASHBOARD_T = BASE_T.replace("__BODY__", """
 <div class="page-title">📊 Dashboard <small>Visão geral do servidor</small></div>
 <div class="stats-grid">
   <div class="stat-card">
@@ -836,7 +833,7 @@ DASHBOARD_T = BASE_T + """
     </tbody>
   </table>
 </div>
-{% endblock %}"""
+""")
 
 @app.route('/dashboard')
 @admin_required
@@ -853,8 +850,7 @@ def dashboard():
         session=session, banner=get_banner(), active='dashboard', is_admin=True)
 
 # ── usuários ───────────────────────────────────────────────────────────────────
-USERS_T = BASE_T + """
-{% block body %}
+USERS_T = BASE_T.replace("__BODY__", """
 <div class="page-title">👥 Usuários do Sistema</div>
 <div class="actions">
   <button class="btn btn-primary" onclick="document.getElementById('mNewUser').classList.add('open')">➕ Novo Usuário</button>
@@ -915,7 +911,7 @@ document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>
 function openResetPass(u){document.getElementById('rpUsername').value=u;document.getElementById('rpUserLabel').value=u;document.getElementById('mResetPass').classList.add('open');}
 function confirmDelUser(u){if(!confirm('Excluir usuário "'+u+'"? Remove do sistema e do Samba.'))return;document.getElementById('delUsername').value=u;document.getElementById('fDelUser').submit();}
 </script>
-{% endblock %}"""
+""")
 
 @app.route('/admin/users')
 @admin_required
@@ -993,8 +989,7 @@ def user_delete():
     return redirect(url_for('users_page'))
 
 # ── grupos ─────────────────────────────────────────────────────────────────────
-GROUPS_T = BASE_T + """
-{% block body %}
+GROUPS_T = BASE_T.replace("__BODY__", """
 <div class="page-title">🏷️ Grupos do Sistema</div>
 <div class="actions">
   <button class="btn btn-primary" onclick="document.getElementById('mNewGroup').classList.add('open')">➕ Novo Grupo</button>
@@ -1043,7 +1038,7 @@ document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>
 function openEditGroup(name,members){document.getElementById('editGroupName').value=name;document.getElementById('editGroupLabel').value=name;document.getElementById('editGroupMembers').value=members;document.getElementById('mEditGroup').classList.add('open');}
 function confirmDelGroup(g){if(!confirm('Excluir grupo "'+g+'"?'))return;document.getElementById('delGroupName').value=g;document.getElementById('fDelGroup').submit();}
 </script>
-{% endblock %}"""
+""")
 
 @app.route('/admin/groups')
 @admin_required
@@ -1096,8 +1091,7 @@ def group_delete():
     return redirect(url_for('groups_page'))
 
 # ── shares samba ───────────────────────────────────────────────────────────────
-SHARES_T = BASE_T + """
-{% block body %}
+SHARES_T = BASE_T.replace("__BODY__", """
 <div class="page-title">📁 Shares Samba <small>{{ smb_conf }}</small></div>
 <div class="actions">
   <button class="btn btn-primary" onclick="document.getElementById('mNewShare').classList.add('open')">➕ Novo Share</button>
@@ -1177,7 +1171,7 @@ function openEditShare(s){
 }
 function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
 </script>
-{% endblock %}"""
+""")
 
 def _rebuild_smb_conf(shares: list[dict]) -> str:
     try:
@@ -1315,16 +1309,14 @@ def shares_reload():
 def shares_testparm():
     rc, out, err = run(['sudo', 'testparm', '-s'])
     output = out + ('\n' + err if err else '')
-    return render_template_string(BASE_T + """
-{% block body %}
+    return render_template_string(BASE_T.replace("__BODY__", """
 <div class="page-title">🔍 testparm <a href="{{ url_for('shares_page') }}" class="btn btn-sm" style="margin-left:.75rem">← Voltar</a></div>
 <pre class="log-box">{{ output }}</pre>
-{% endblock %}""", output=output,
+"""), output=output,
         session=session, banner=get_banner(), active='shares', is_admin=True)
 
 # ── raid / discos ──────────────────────────────────────────────────────────────
-RAID_T = BASE_T + """
-{% block body %}
+RAID_T = BASE_T.replace("__BODY__", """
 <div class="page-title">💾 RAID / Discos</div>
 <div class="card">
   <div class="card-header"><h3>Arrays RAID — /proc/mdstat</h3></div>
@@ -1384,7 +1376,7 @@ RAID_T = BASE_T + """
   <div class="card-header"><h3>/proc/mdstat (bruto)</h3></div>
   <pre class="log-box" style="max-height:150px">{{ raid.raw }}</pre>
 </div>
-{% endblock %}"""
+""")
 
 @app.route('/admin/raid')
 @admin_required
@@ -1411,8 +1403,7 @@ def raid_smart():
         session=session, banner=get_banner(), active='raid', is_admin=True)
 
 # ── backups ────────────────────────────────────────────────────────────────────
-BACKUPS_T = BASE_T + """
-{% block body %}
+BACKUPS_T = BASE_T.replace("__BODY__", """
 <div class="page-title">🗄️ Backups <small>{{ backup_dir }}</small></div>
 <div class="actions">
   <form method="post" action="{{ url_for('backup_run') }}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Iniciando...'">
@@ -1448,7 +1439,7 @@ BACKUPS_T = BASE_T + """
 <script>
 function confirmDelBackup(n){if(!confirm('Excluir "'+n+'"?'))return;document.getElementById('delBackupName').value=n;document.getElementById('fDelBackup').submit();}
 </script>
-{% endblock %}"""
+""")
 
 @app.route('/admin/backups')
 @admin_required
@@ -1494,8 +1485,7 @@ def backup_delete():
     return redirect(url_for('backups_page'))
 
 # ── logs ───────────────────────────────────────────────────────────────────────
-LOGS_T = BASE_T + """
-{% block body %}
+LOGS_T = BASE_T.replace("__BODY__", """
 <div class="page-title">📋 Logs de Acesso Samba</div>
 <div class="actions">
   <a href="?lines=50" class="btn {{ 'btn-primary' if lines==50 else '' }}">50 linhas</a>
@@ -1506,7 +1496,7 @@ LOGS_T = BASE_T + """
   <div class="card-header"><h3>Logs recentes</h3></div>
   <pre class="log-box">{{ logs }}</pre>
 </div>
-{% endblock %}"""
+""")
 
 @app.route('/admin/logs')
 @admin_required
@@ -1516,8 +1506,7 @@ def logs_page():
         session=session, banner=get_banner(), active='logs', is_admin=True)
 
 # ── change-pass própria senha ──────────────────────────────────────────────────
-CHPASS_T = BASE_T + """
-{% block body %}
+CHPASS_T = BASE_T.replace("__BODY__", """
 <div class="page-title">🔑 Alterar Minha Senha</div>
 <div style="max-width:380px">
   <div class="card"><div class="card-header"><h3>Nova Senha</h3></div><div class="card-body">
@@ -1529,7 +1518,7 @@ CHPASS_T = BASE_T + """
     </form>
   </div></div>
 </div>
-{% endblock %}"""
+""")
 
 @app.route('/change-pass', methods=['GET'])
 @login_required
@@ -1564,8 +1553,7 @@ def change_pass():
     return redirect(url_for('change_pass_page'))
 
 # ── admin: configurações do portal ────────────────────────────────────────────
-ADMIN_T = BASE_T + """
-{% block body %}
+ADMIN_T = BASE_T.replace("__BODY__", """
 <div class="page-title">⚙️ Configurações do Portal</div>
 <div class="grid2">
   <div class="card"><div class="card-header"><h3>Aviso / Notícia</h3></div><div class="card-body">
@@ -1585,7 +1573,7 @@ ADMIN_T = BASE_T + """
     </form>
   </div></div>
 </div>
-{% endblock %}"""
+""")
 
 @app.route('/admin')
 @admin_required
