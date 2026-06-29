@@ -86,6 +86,7 @@ def run(cmd: list, input_: str | None = None) -> tuple[int, str, str]:
 
 def get_system_users() -> list[dict]:
     users = []
+    NOLOGIN = {'/usr/sbin/nologin', '/bin/false', '/sbin/nologin'}
     try:
         with open('/etc/passwd') as f:
             for line in f:
@@ -96,9 +97,13 @@ def get_system_users() -> list[dict]:
                 if uid < 1000 or uid > 60000:
                     continue
                 shell = parts[6]
-                if shell in ('/usr/sbin/nologin', '/bin/false', '/sbin/nologin'):
-                    continue
-                users.append({'name': parts[0], 'uid': uid, 'home': parts[5], 'shell': shell})
+                users.append({
+                    'name':   parts[0],
+                    'uid':    uid,
+                    'home':   parts[5],
+                    'shell':  shell,
+                    'active': shell not in NOLOGIN,
+                })
     except Exception:
         pass
     return sorted(users, key=lambda u: u['name'])
@@ -358,6 +363,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f8f9fa}
 .btn:hover{background:var(--bg3);text-decoration:none}
 .btn-primary{background:#1c3557;border-color:#1c3557;color:#fff}.btn-primary:hover{background:#243f6a}
 .btn-danger{border-color:#f0b0b0;color:var(--danger)}.btn-danger:hover{background:#fef0f0}
+.btn-warn{border-color:#f0d080;color:var(--warn)}.btn-warn:hover{background:#fffbe6}
+.btn-success{border-color:#a0d0a8;color:var(--success)}.btn-success:hover{background:#f0fff2}
 .btn-sm{padding:.2rem .5rem;font-size:.72rem}.btn-xs{padding:.12rem .38rem;font-size:.68rem}
 .actions{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center}
 .flash{padding:.5rem .9rem;border-radius:6px;margin-bottom:.75rem;font-size:.8rem}
@@ -862,17 +869,29 @@ USERS_T = BASE_T.replace("__BODY__", """
 <div class="card">
   <div class="card-header"><h3>Usuários</h3><span class="text-muted" style="font-size:.76rem">{{ users|length }}</span></div>
   <table>
-    <thead><tr><th>Usuário</th><th>UID</th><th>Home</th><th class="text-right">Ações</th></tr></thead>
+    <thead><tr><th>Usuário</th><th>UID</th><th>Home</th><th>Status</th><th class="text-right">Ações</th></tr></thead>
     <tbody>
     {% for u in users %}
-    <tr>
+    <tr style="opacity:{% if u.active %}1{% else %}.55{% endif %}">
       <td><strong>{{ u.name }}</strong></td>
       <td class="text-muted">{{ u.uid }}</td>
       <td class="text-muted" style="font-family:var(--mono);font-size:.74rem">{{ u.home }}</td>
+      <td>
+        {% if u.active %}
+          <span style="color:var(--success);font-size:.75rem;font-weight:600">● Ativo</span>
+        {% else %}
+          <span style="color:var(--muted);font-size:.75rem;font-weight:600">○ Inativo</span>
+        {% endif %}
+      </td>
       <td class="text-right nowrap">
         <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">🔑 Senha</button>
         {% if u.name != session.user %}
-        <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">🗑</button>
+          {% if u.active %}
+            <button class="btn btn-xs btn-warn" onclick="confirmToggle('{{ u.name }}','deactivate')">⏸ Inativar</button>
+          {% else %}
+            <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">▶ Ativar</button>
+          {% endif %}
+          <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">🗑</button>
         {% endif %}
       </td>
     </tr>
@@ -909,11 +928,22 @@ USERS_T = BASE_T.replace("__BODY__", """
 <form method="post" id="fDelUser" action="{{ url_for('user_delete') }}" style="display:none">
   <input type="hidden" name="username" id="delUsername">
 </form>
+<form method="post" id="fToggleUser" action="{{ url_for('user_toggle') }}" style="display:none">
+  <input type="hidden" name="username" id="toggleUsername">
+  <input type="hidden" name="action"   id="toggleAction">
+</form>
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 function openResetPass(u){document.getElementById('rpUsername').value=u;document.getElementById('rpUserLabel').value=u;document.getElementById('mResetPass').classList.add('open');}
 function confirmDelUser(u){if(!confirm('Excluir usuário "'+u+'"? Remove do sistema e do Samba.'))return;document.getElementById('delUsername').value=u;document.getElementById('fDelUser').submit();}
+function confirmToggle(u,action){
+  var msg = action==='activate' ? 'Ativar usuário "'+u+'"?' : 'Inativar usuário "'+u+'"? O acesso ao Samba será bloqueado.';
+  if(!confirm(msg))return;
+  document.getElementById('toggleUsername').value=u;
+  document.getElementById('toggleAction').value=action;
+  document.getElementById('fToggleUser').submit();
+}
 </script>
 """)
 
@@ -990,6 +1020,27 @@ def user_delete():
         flash(f'Erro ao remover: {err}', 'error')
     else:
         flash(f'Usuário "{username}" removido', 'success')
+    return redirect(url_for('users_page'))
+
+@app.route('/admin/users/toggle', methods=['POST'])
+@admin_required
+def user_toggle():
+    username = request.form.get('username', '').strip()
+    action   = request.form.get('action', '')   # 'activate' | 'deactivate'
+    if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+        flash('Usuário inválido', 'error')
+        return redirect(url_for('users_page'))
+    if username == session.get('user'):
+        flash('Não é possível alterar o próprio usuário logado', 'error')
+        return redirect(url_for('users_page'))
+    if action == 'activate':
+        rc, _, err = run(['sudo', 'usermod', '-s', '/bin/bash', username])
+        msg = f'Usuário "{username}" ativado' if rc == 0 else f'Erro: {err}'
+    else:
+        rc, _, err = run(['sudo', 'usermod', '-s', '/usr/sbin/nologin', username])
+        run(['sudo', 'smbpasswd', '-d', username])
+        msg = f'Usuário "{username}" inativado' if rc == 0 else f'Erro: {err}'
+    flash(msg, 'success' if rc == 0 else 'error')
     return redirect(url_for('users_page'))
 
 # ── grupos ─────────────────────────────────────────────────────────────────────
