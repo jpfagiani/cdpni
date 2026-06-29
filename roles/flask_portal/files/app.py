@@ -504,22 +504,26 @@ def login():
         req_user = user
         p = pam.pam()
         if p.authenticate(user, password, service='cdpni-portal'):
-            import grp as grp_mod
-            groups = []
-            try:
-                for g in grp_mod.getgrall():
-                    if user in g.gr_mem:
-                        groups.append(g.gr_name)
-            except Exception:
-                pass
-            session.clear()
-            session['logged_in'] = True
-            session['user']      = user
-            session['groups']    = groups
-            session.permanent    = True
-            nxt = request.args.get('next')
-            return redirect(nxt if nxt and nxt.startswith('/') else url_for('index'))
-        error = 'Usuário ou senha inválidos'
+            if user not in ADMIN_USERS:
+                error = 'Acesso restrito a administradores'
+            else:
+                import grp as grp_mod
+                groups = []
+                try:
+                    for g in grp_mod.getgrall():
+                        if user in g.gr_mem:
+                            groups.append(g.gr_name)
+                except Exception:
+                    pass
+                session.clear()
+                session['logged_in'] = True
+                session['user']      = user
+                session['groups']    = groups
+                session.permanent    = True
+                nxt = request.args.get('next')
+                return redirect(nxt if nxt and nxt.startswith('/') else url_for('index'))
+        else:
+            error = 'Usuário ou senha inválidos'
     return render_template_string(LOGIN_T, error=error, req_user=req_user,
         session=session, banner=get_banner(), active='', is_admin=False)
 
