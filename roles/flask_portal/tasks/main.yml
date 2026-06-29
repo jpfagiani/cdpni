@@ -136,19 +136,32 @@
     - /var/log/cdpni_portal_access.log
     - /var/log/cdpni_portal_error.log
 
-- name: Configurar Nginx — portal (80 → 443)
+- name: Configurar Nginx — portal (8443 SSL)
   ansible.builtin.template:
     src: nginx-portal.conf.j2
     dest: /etc/nginx/sites-available/cdpni-portal
     mode: "0644"
-  notify: reload nginx
 
 - name: Ativar site do portal
   ansible.builtin.file:
     src: /etc/nginx/sites-available/cdpni-portal
     dest: /etc/nginx/sites-enabled/cdpni-portal
     state: link
-  notify: reload nginx
+
+- name: Remover site default do nginx
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+
+- name: Validar config do nginx
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Recarregar nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+    enabled: true
 
 - name: Habilitar e iniciar portal
   ansible.builtin.systemd:
@@ -156,4 +169,10 @@
     state: started
     enabled: true
     daemon_reload: true
+
+- name: Verificar que nginx escuta na porta 8443
+  ansible.builtin.wait_for:
+    port: 8443
+    host: 127.0.0.1
+    timeout: 15
 
