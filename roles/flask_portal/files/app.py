@@ -84,6 +84,14 @@ def run(cmd: list, input_: str | None = None) -> tuple[int, str, str]:
     proc = subprocess.run(cmd, input=input_, capture_output=True, text=True)
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
+def set_linux_password(username: str, password: str) -> tuple[int, str]:
+    """Define senha Linux via usermod -p com hash SHA-512, evitando PAM."""
+    import crypt, random, string
+    salt = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+    hashed = crypt.crypt(password, f'$6${salt}$')
+    rc, _, err = run(['sudo', 'usermod', '-p', hashed, username])
+    return rc, err
+
 ADMIN_GROUP = 'cdpni-admins'
 
 def get_admin_group_members() -> set:
@@ -1082,7 +1090,7 @@ def user_create():
     if rc != 0:
         flash(f'Erro ao criar usuário: {err}', 'error')
         return redirect(url_for('users_page'))
-    run(['sudo', 'chpasswd'], input_=f'{username}:{password}')
+    set_linux_password(username, password)
     if add_samba:
         run(['sudo', 'smbpasswd', '-a', '-s', username], input_=f'{password}\n{password}\n')
     if is_admin:
@@ -1147,7 +1155,7 @@ def user_passwd():
     if len(password) < 4:
         flash('Mínimo 4 caracteres', 'error')
         return redirect(url_for('users_page'))
-    rc, _, err = run(['sudo', 'chpasswd'], input_=f'{username}:{password}')
+    rc, err = set_linux_password(username, password)
     if rc != 0:
         flash(f'Erro ao alterar senha: {err}', 'error')
         return redirect(url_for('users_page'))
@@ -1751,7 +1759,7 @@ def change_pass():
     if new_pass != confirm:
         flash('Senhas não coincidem', 'error')
         return redirect(url_for('change_pass_page'))
-    rc, _, err = run(['sudo', 'chpasswd'], input_=f'{user}:{new_pass}')
+    rc, err = set_linux_password(user, new_pass)
     if rc != 0:
         flash(f'Erro ao alterar senha: {err}', 'error')
     else:

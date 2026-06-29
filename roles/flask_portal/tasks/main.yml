@@ -48,8 +48,10 @@
   ansible.builtin.copy:
     dest: /etc/pam.d/cdpni-portal
     content: |
-      auth    required    pam_unix.so
-      account required    pam_unix.so
+      auth     required    pam_unix.so
+      account  required    pam_unix.so
+      password required    pam_unix.so obscure sha512
+      session  optional    pam_unix.so
     mode: "0644"
 
 - name: Criar diretório do portal
