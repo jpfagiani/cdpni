@@ -1,8 +1,31 @@
 ---
-- name: Instalar dependências Python
+- name: Instalar nginx e dependências Python
   ansible.builtin.apt:
-    name: [python3, python3-pip, python3-venv, python3-pam]
+    name:
+      - nginx
+      - python3
+      - python3-pip
+      - python3-venv
+      - python3-pam
     state: present
+
+- name: Criar estrutura de diretórios do nginx
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /etc/nginx/sites-available
+    - /etc/nginx/sites-enabled
+
+- name: Garantir que nginx.conf inclui sites-enabled
+  ansible.builtin.lineinfile:
+    path: /etc/nginx/nginx.conf
+    regexp: 'sites-enabled'
+    line: "    include /etc/nginx/sites-enabled/*;"
+    insertafter: 'include /etc/nginx/conf.d'
+    state: present
+  notify: reload nginx
 
 - name: Criar usuário de serviço do portal
   ansible.builtin.user:
@@ -66,12 +89,14 @@
   loop:
     - "{{ raid.mount }}"
     - "{{ raid.mount }}/shares"
+  ignore_errors: true
 
 - name: Configurar ACL nos diretórios dos shares (leitura + escrita para o portal)
   ansible.builtin.shell: |
     find {{ raid.mount }}/shares -maxdepth 1 -type d \
       -exec setfacl -m u:{{ portal.user }}:rwx {} \;
   changed_when: false
+  ignore_errors: true
 
 - name: Configurar sudoers para o portal (chpasswd + smbpasswd)
   ansible.builtin.copy:
