@@ -125,7 +125,7 @@
       user="$1"
       pass="$2"
       hash=$(openssl passwd -6 "$pass")
-      exec usermod -p "$hash" "$user"
+      echo "$user:$hash" | chpasswd -e
     mode: "0700"
     owner: root
     group: root

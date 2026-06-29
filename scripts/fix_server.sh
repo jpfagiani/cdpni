@@ -13,7 +13,7 @@ cat > /usr/local/bin/cdpni-setpass << 'EOF'
 user="$1"
 pass="$2"
 hash=$(openssl passwd -6 "$pass")
-exec usermod -p "$hash" "$user"
+echo "$user:$hash" | chpasswd -e
 EOF
 chmod 700 /usr/local/bin/cdpni-setpass
 echo "    OK: /usr/local/bin/cdpni-setpass"
