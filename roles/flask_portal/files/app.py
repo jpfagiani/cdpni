@@ -939,9 +939,11 @@ USERS_T = BASE_T.replace("__BODY__", """
         {% endif %}
       </td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">Senha</button>
-        <button class="btn btn-xs" onclick="openPerms('{{ u.name }}')">Permissões</button>
-        {% if u.name != session.user %}
+        <span style="display:inline-flex;gap:3px;align-items:center">
+          <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">Senha</button>
+          <button class="btn btn-xs" onclick="openPerms('{{ u.name }}')">Permissões</button>
+          {% if u.name != session.user %}
+          <span style="width:1px;height:14px;background:var(--border);display:inline-block;margin:0 2px"></span>
           {% if u.is_admin %}
             <button class="btn btn-xs btn-warn" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
           {% else %}
@@ -952,8 +954,10 @@ USERS_T = BASE_T.replace("__BODY__", """
           {% else %}
             <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
           {% endif %}
+          <span style="width:1px;height:14px;background:var(--border);display:inline-block;margin:0 2px"></span>
           <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
-        {% endif %}
+          {% endif %}
+        </span>
       </td>
     </tr>
     {% endfor %}
@@ -1345,14 +1349,8 @@ SHARES_T = BASE_T.replace("__BODY__", """
       <td class="text-muted" style="font-size:.74rem">{{ s.valid_users or '—' }}</td>
       <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs btn-edit-share"
-          data-name="{{ s.name|e }}"
-          data-path="{{ s.path|e }}"
-          data-comment="{{ s.comment|e }}"
-          data-users="{{ s.valid_users|e }}"
-          data-ro="{{ s.read_only|e }}"
-          data-browse="{{ s.browseable|e }}">✏ Editar</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name|e }}')">🗑 Excluir</button>
+        <button class="btn btn-xs" onclick="openEditShare('{{ s.name|e }}','{{ s.path|e }}','{{ s.comment|e }}','{{ s.valid_users|e }}','{{ s.read_only|e }}','{{ s.browseable|e }}')">Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name|e }}')">Excluir</button>
       </td>
     </tr>
     {% endfor %}
@@ -1398,21 +1396,16 @@ SHARES_T = BASE_T.replace("__BODY__", """
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-document.addEventListener('DOMContentLoaded',function(){
-  document.querySelectorAll('.btn-edit-share').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var d=this.dataset;
-      document.getElementById('esOrigName').value=d.name||'';
-      document.getElementById('esName').value=d.name||'';
-      document.getElementById('esPath').value=d.path||'';
-      document.getElementById('esComment').value=d.comment||'';
-      document.getElementById('esUsers').value=d.users||'';
-      document.getElementById('esRO').value=d.ro||'no';
-      document.getElementById('esBrowse').value=d.browse||'yes';
-      document.getElementById('mEditShare').classList.add('open');
-    });
-  });
-});
+function openEditShare(name,path,comment,users,ro,browse){
+  document.getElementById('esOrigName').value=name;
+  document.getElementById('esName').value=name;
+  document.getElementById('esPath').value=path;
+  document.getElementById('esComment').value=comment;
+  document.getElementById('esUsers').value=users;
+  document.getElementById('esRO').value=ro||'no';
+  document.getElementById('esBrowse').value=browse||'yes';
+  document.getElementById('mEditShare').classList.add('open');
+}
 function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
 </script>
 """)
