@@ -820,8 +820,11 @@ def rename(disk, rel):
     elif dst.exists():
         flash('Nome já existe', 'error')
     else:
-        src.rename(dst)
-        flash('Renomeado', 'success')
+        rc, _, err = run(['sudo', 'mv', str(src), str(dst)])
+        if rc == 0:
+            flash('Renomeado', 'success')
+        else:
+            flash(f'Erro ao renomear: {err}', 'error')
     return redirect(url_for('browse', disk=disk, rel=rel))
 
 @app.route('/delete/<disk>/', defaults={'rel': ''}, methods=['POST'])
@@ -838,11 +841,17 @@ def delete(disk, rel):
     if not target.exists():
         flash('Não encontrado', 'error')
     elif is_dir:
-        shutil.rmtree(str(target))
-        flash(f'Pasta "{name}" removida', 'success')
+        rc, _, err = run(['sudo', 'rm', '-rf', str(target)])
+        if rc == 0:
+            flash(f'Pasta "{name}" removida', 'success')
+        else:
+            flash(f'Erro ao remover: {err}', 'error')
     else:
-        target.unlink()
-        flash(f'"{name}" removido', 'success')
+        rc, _, err = run(['sudo', 'rm', str(target)])
+        if rc == 0:
+            flash(f'"{name}" removido', 'success')
+        else:
+            flash(f'Erro ao remover: {err}', 'error')
     return redirect(url_for('browse', disk=disk, rel=rel))
 
 @app.route('/banner-img/<filename>')
