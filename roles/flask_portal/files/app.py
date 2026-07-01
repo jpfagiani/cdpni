@@ -1417,10 +1417,11 @@ document.querySelectorAll('.modal-bg').forEach(function(m){m.addEventListener('c
 var _pathEdited=false;
 function autoPath(){
   if(_pathEdited) return;
-  var name=document.getElementById('nsName').value.trim();
-  document.getElementById('nsPath').value=name?'/mnt/raid/shares/'+name:'';
+  var n=document.getElementById('nsName');
+  var p=document.getElementById('nsPath');
+  if(n&&p) p.value=n.value.trim()?'/mnt/raid/shares/'+n.value.trim():'';
 }
-document.getElementById('nsPath').addEventListener('input',function(){_pathEdited=this.value!=='';});
+(function(){var p=document.getElementById('nsPath');if(p)p.addEventListener('input',function(){_pathEdited=this.value!=='';});})();
 function openEditShare(idx){
   var s=SHARES_DATA[idx];
   document.getElementById('esOrigName').value=s.name||'';
