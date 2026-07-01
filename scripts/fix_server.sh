@@ -49,7 +49,9 @@ echo "==> Criando wrapper de criação de usuário..."
 cat > /usr/local/bin/cdpni-useradd << 'PYEOF'
 #!/usr/bin/env python3
 # Uso: cdpni-useradd <username>
-import sys, os, re, shutil, subprocess
+# Usa useradd para criar o usuário e corrige /etc/gshadow manualmente
+# caso o kernel audit bloqueie a escrita durante useradd.
+import sys, re, subprocess
 
 username = sys.argv[1]
 
@@ -63,41 +65,29 @@ with open('/etc/passwd') as f:
             print(f'Usuário já existe: {username}', file=sys.stderr)
             sys.exit(1)
 
-uids = set()
-with open('/etc/passwd') as f:
-    for line in f:
-        parts = line.split(':')
-        try:
-            uids.add(int(parts[2]))
-        except (IndexError, ValueError):
-            pass
-uid = max((u for u in uids if 1000 <= u < 60000), default=999) + 1
-home = f'/home/{username}'
+result = subprocess.run(
+    ['useradd', '--no-log-init', '-m', '-s', '/bin/bash', username],
+    capture_output=True, text=True
+)
 
-with open('/etc/passwd', 'a') as f:
-    f.write(f'{username}:x:{uid}:{uid}::{home}:/bin/bash\n')
-with open('/etc/shadow', 'a') as f:
-    f.write(f'{username}:!::0:99999:7:::\n')
-with open('/etc/group', 'a') as f:
-    f.write(f'{username}:x:{uid}:\n')
+# Verifica se o usuário foi de fato criado (useradd pode falhar no gshadow
+# mas ainda criar a entrada em /etc/passwd)
+created = any(line.split(':')[0] == username for line in open('/etc/passwd'))
+if not created:
+    print(result.stderr or 'useradd falhou', file=sys.stderr)
+    sys.exit(1)
+
+# Corrige /etc/gshadow caso a entrada esteja faltando
 try:
-    with open('/etc/gshadow', 'a') as f:
-        f.write(f'{username}:!::\n')
+    with open('/etc/gshadow') as f:
+        content = f.read()
+    if not any(l.split(':')[0] == username for l in content.splitlines()):
+        with open('/etc/gshadow', 'a') as f:
+            f.write(f'{username}:!::\n')
 except FileNotFoundError:
     pass
 
-subprocess.run(['mkdir', '-p', '-m', '755', home], check=True)
-subprocess.run(['chown', f'{uid}:{uid}', home], check=True)
-skel = '/etc/skel'
-if os.path.isdir(skel):
-    for item in os.listdir(skel):
-        src = os.path.join(skel, item)
-        dst = os.path.join(home, item)
-        if os.path.isfile(src):
-            shutil.copy2(src, dst)
-            subprocess.run(['chown', f'{uid}:{uid}', dst])
-
-print(f'Usuário {username} criado com uid={uid}')
+print(f'Usuário {username} criado')
 PYEOF
 chmod 700 /usr/local/bin/cdpni-useradd
 echo "    OK: /usr/local/bin/cdpni-useradd"
