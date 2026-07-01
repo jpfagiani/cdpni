@@ -939,20 +939,20 @@ USERS_T = BASE_T.replace("__BODY__", """
         {% endif %}
       </td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">🔑 Senha</button>
-        <button class="btn btn-xs" onclick="openPerms('{{ u.name }}')">🔒 Permissões</button>
+        <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">Senha</button>
+        <button class="btn btn-xs" onclick="openPerms('{{ u.name }}')">Permissões</button>
         {% if u.name != session.user %}
           {% if u.is_admin %}
-            <button class="btn btn-xs btn-warn" onclick="confirmRole('{{ u.name }}','comum')">↓ Comum</button>
+            <button class="btn btn-xs btn-warn" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
           {% else %}
-            <button class="btn btn-xs btn-success" onclick="confirmRole('{{ u.name }}','admin')">↑ Admin</button>
+            <button class="btn btn-xs btn-success" onclick="confirmRole('{{ u.name }}','admin')">↑ Tornar Admin</button>
           {% endif %}
           {% if u.active %}
-            <button class="btn btn-xs btn-warn" onclick="confirmToggle('{{ u.name }}','deactivate')">⏸</button>
+            <button class="btn btn-xs btn-warn" onclick="confirmToggle('{{ u.name }}','deactivate')">Inativar</button>
           {% else %}
-            <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">▶</button>
+            <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
           {% endif %}
-          <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">🗑</button>
+          <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
         {% endif %}
       </td>
     </tr>
@@ -1238,8 +1238,8 @@ GROUPS_T = BASE_T.replace("__BODY__", """
       <td class="text-muted">{{ g.gid }}</td>
       <td class="text-muted" style="font-size:.76rem">{{ g.members|join(', ') if g.members else '—' }}</td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openEditGroup('{{ g.name }}','{{ g.members|join(',') }}')">✏ Editar</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelGroup('{{ g.name }}')">🗑</button>
+        <button class="btn btn-xs" onclick="openEditGroup('{{ g.name }}','{{ g.members|join(',') }}')">Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelGroup('{{ g.name }}')">Excluir</button>
       </td>
     </tr>
     {% endfor %}
@@ -1398,17 +1398,19 @@ SHARES_T = BASE_T.replace("__BODY__", """
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-document.querySelectorAll('.btn-edit-share').forEach(function(btn){
-  btn.addEventListener('click', function(){
-    var d=this.dataset;
-    document.getElementById('esOrigName').value=d.name||'';
-    document.getElementById('esName').value=d.name||'';
-    document.getElementById('esPath').value=d.path||'';
-    document.getElementById('esComment').value=d.comment||'';
-    document.getElementById('esUsers').value=d.users||'';
-    document.getElementById('esRO').value=d.ro||'no';
-    document.getElementById('esBrowse').value=d.browse||'yes';
-    document.getElementById('mEditShare').classList.add('open');
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('.btn-edit-share').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var d=this.dataset;
+      document.getElementById('esOrigName').value=d.name||'';
+      document.getElementById('esName').value=d.name||'';
+      document.getElementById('esPath').value=d.path||'';
+      document.getElementById('esComment').value=d.comment||'';
+      document.getElementById('esUsers').value=d.users||'';
+      document.getElementById('esRO').value=d.ro||'no';
+      document.getElementById('esBrowse').value=d.browse||'yes';
+      document.getElementById('mEditShare').classList.add('open');
+    });
   });
 });
 function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
