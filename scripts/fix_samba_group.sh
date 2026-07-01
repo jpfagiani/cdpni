@@ -66,7 +66,7 @@ testparm -s "$SMB_CONF" > /dev/null && echo "    OK: testparm passou"
 
 echo "==> Corrigindo grupo e permissão em arquivos existentes nos shares..."
 python3 << 'PYEOF'
-import re, os, subprocess
+import re, os, subprocess, grp as grpmod
 
 conf_path = '/etc/samba/smb.conf'
 with open(conf_path) as f:
@@ -74,25 +74,43 @@ with open(conf_path) as f:
 
 SKIP = {'global', 'recycle', 'homes', 'printers'}
 
+def group_exists(name):
+    try:
+        grpmod.getgrnam(name)
+        return True
+    except KeyError:
+        return False
+
 for m in re.finditer(r'\[([^\]]+)\]\s*\n(.*?)(?=\[|\Z)', content, re.DOTALL):
     share_name = m.group(1).strip()
     body       = m.group(2)
     if share_name.lower() in SKIP:
         continue
-    grp = 'grp_' + share_name.lower()
 
-    # descobre o path do share
+    # Tenta pegar o grupo de 'force group' já existente
+    fg = re.search(r'^\s*force group\s*=\s*(\S+)', body, re.MULTILINE)
+    if fg:
+        grp = fg.group(1).lstrip('+')
+    else:
+        # Tenta extrair @grupo da linha valid users
+        vu = re.search(r'^\s*valid users\s*=.*?@(\S+)', body, re.MULTILINE)
+        grp = vu.group(1) if vu else 'grp_' + share_name.lower()
+
+    # Verifica se o grupo existe antes de usar
+    if not group_exists(grp):
+        print(f'    AVISO: grupo "{grp}" não existe — pulando {share_name}')
+        continue
+
     pm = re.search(r'^\s*path\s*=\s*(.+)', body, re.MULTILINE)
     if not pm:
         continue
     path = pm.group(1).strip()
     if not os.path.isdir(path):
-        print(f'    AVISO: {path} não existe, pulando {share_name}')
+        print(f'    AVISO: {path} não existe — pulando {share_name}')
         continue
 
-    print(f'    {share_name}: chown -R :{grp} + chmod -R g+rw {path}')
+    print(f'    {share_name}: chown -R :{grp}  chmod -R g+rw  {path}')
     subprocess.run(['chown', '-R', f':{grp}', path])
-    # garante rw para grupo em todos os arquivos; diretórios ficam com rwx
     subprocess.run(['find', path, '-type', 'f', '-exec', 'chmod', 'g+rw', '{}', '+'])
     subprocess.run(['find', path, '-type', 'd', '-exec', 'chmod', 'g+rwx', '{}', '+'])
 
