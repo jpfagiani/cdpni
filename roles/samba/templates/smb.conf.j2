@@ -81,6 +81,7 @@
     directory mask       = 0777
     force create mode    = 0664
     force directory mode = 0777
+    force group          = {{ grp }}
 {% if share.type in ['guest', 'guest_hidden'] %}
     guest ok             = yes
     public               = yes
