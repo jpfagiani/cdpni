@@ -1731,7 +1731,7 @@ def raid_smart():
     smart_disk = disk
     if disk and re.match(r'^/dev/[\w]+$', disk):
         base_disk = re.sub(r'\d+$', '', disk)
-        rc, out, err = run(['sudo', 'smartctl', '-a', base_disk])
+        rc, out, err = run(['sudo', '/usr/local/bin/cdpni-smart', base_disk])
         smart_output = out or err or 'Sem saída'
     else:
         smart_output = 'Dispositivo inválido'

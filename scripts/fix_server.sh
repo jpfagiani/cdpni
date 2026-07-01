@@ -211,10 +211,23 @@ PYEOF
 chmod 700 /usr/local/bin/cdpni-userdel
 echo "    OK: /usr/local/bin/cdpni-userdel"
 
+echo "==> Criando wrapper SMART..."
+cat > /usr/local/bin/cdpni-smart << 'EOF'
+#!/bin/bash
+disk="$1"
+if [[ ! "$disk" =~ ^/dev/[a-z]+$ ]]; then
+    echo "Dispositivo inválido: $disk" >&2
+    exit 1
+fi
+exec /usr/bin/smartctl -a "$disk"
+EOF
+chmod 700 /usr/local/bin/cdpni-smart
+echo "    OK: /usr/local/bin/cdpni-smart"
+
 echo "==> Atualizando sudoers..."
 cat > /etc/sudoers.d/cdpni-portal << 'EOF'
-Defaults:cdpni !log_allowed, !syslog, !requiretty, !audit
-cdpni ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/local/bin/cdpni-userdel, /usr/local/bin/cdpni-groupadd, /usr/local/bin/cdpni-groupdel, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
+Defaults:cdpni !log_allowed, !syslog, !requiretty
+cdpni ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/local/bin/cdpni-userdel, /usr/local/bin/cdpni-groupadd, /usr/local/bin/cdpni-groupdel, /usr/local/bin/cdpni-smart, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
 EOF
 chmod 440 /etc/sudoers.d/cdpni-portal
 visudo -cf /etc/sudoers.d/cdpni-portal && echo "    OK: /etc/sudoers.d/cdpni-portal"
