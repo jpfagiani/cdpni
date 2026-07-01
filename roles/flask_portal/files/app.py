@@ -1748,7 +1748,10 @@ def raid_smart():
             for m in members:
                 dev = f'/dev/{m}'
                 rc, out, err = run(['sudo', '/usr/local/bin/cdpni-smart', dev])
-                parts.append(f'=== {dev} ===\n{out or err or "Sem saída"}')
+                output = out or err or 'Sem saída'
+                if 'No Information Found' in output or 'Operation not permitted' in output:
+                    output = f'SMART não disponível para {dev}.\nA controladora ou camada de virtualização não expõe dados SMART diretamente.'
+                parts.append(f'=== {dev} ===\n{output}')
             smart_output = '\n\n'.join(parts)
     else:
         base_disk = re.sub(r'\d+$', '', disk)
