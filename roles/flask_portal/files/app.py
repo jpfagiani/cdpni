@@ -348,20 +348,36 @@ def get_samba_connections() -> list[dict]:
     return conns
 
 def get_samba_logs(lines: int = 100) -> str:
-    log_paths = [
-        '/var/log/samba/log.smbd',
-        '/var/log/samba/log.nmbd',
-        '/var/log/samba/audit.log',
-    ]
+    log_dir = '/var/log/samba'
     result = []
-    for p in log_paths:
-        if os.path.exists(p):
-            try:
-                rc, out, _ = run(['sudo', 'tail', f'-n{lines}', p])
-                if out:
-                    result.append(f'=== {p} ===\n{out}')
-            except Exception:
-                pass
+    try:
+        # Arquivos principais primeiro
+        priority = ['log.smbd', 'log.nmbd', 'log.winbindd', 'log.']
+        seen = set()
+        candidates = []
+        for name in priority:
+            p = os.path.join(log_dir, name)
+            if os.path.exists(p) and os.path.getsize(p) > 0:
+                candidates.append(p)
+                seen.add(name)
+        # Logs por máquina/IP (log.NOME) — excluindo rpcd e já vistos
+        skip_prefixes = ('log.rpcd_', 'log.samba-', 'log.wb-', 'log.winbindd-')
+        for fname in sorted(os.listdir(log_dir)):
+            if fname in seen:
+                continue
+            if any(fname.startswith(p) for p in skip_prefixes):
+                continue
+            if not fname.startswith('log.'):
+                continue
+            p = os.path.join(log_dir, fname)
+            if os.path.isfile(p) and os.path.getsize(p) > 0:
+                candidates.append(p)
+        for p in candidates:
+            rc, out, _ = run(['sudo', 'tail', f'-n{lines}', p])
+            if out:
+                result.append(f'=== {os.path.basename(p)} ===\n{out}')
+    except Exception:
+        pass
     return '\n\n'.join(result) if result else '(sem logs disponíveis)'
 
 def get_backups() -> list[dict]:
