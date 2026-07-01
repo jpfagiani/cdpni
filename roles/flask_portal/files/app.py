@@ -1489,30 +1489,38 @@ SHARES_T = BASE_T.replace("__BODY__", """
   <input type="hidden" name="name" id="delShareName">
 </form>
 <script>
-window._nsPathEdited=false;
-function nsAutoPath(inp){
-  if(window._nsPathEdited)return;
-  var p=document.getElementById('nsPath');
-  if(p)p.value=inp.value.trim()?'/mnt/raid/shares/'+inp.value.trim():'';
+window._nsPathEdited = false;
+function nsAutoPath(inp) {
+  if (window._nsPathEdited) return;
+  var p = document.getElementById("nsPath");
+  if (p) p.value = inp.value.trim() ? "/mnt/raid/shares/" + inp.value.trim() : "";
 }
-function closeModal(id){var el=document.getElementById(id);if(el)el.classList.remove('open');}
-document.querySelectorAll('.modal-bg').forEach(function(m){
-  m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open');});
+function closeModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.remove("open");
+}
+document.querySelectorAll(".modal-bg").forEach(function(m) {
+  m.addEventListener("click", function(e) { if (e.target === m) m.classList.remove("open"); });
 });
-function openEditShare(btn){
-  var d=btn.dataset;
-  var set=function(id,v){var el=document.getElementById(id);if(el)el.value=v||'';};
-  set('esOrigName',d.name);set('esName',d.name);set('esPath',d.path);
-  set('esComment',d.comment);set('esUsers',d.users);
-  var ro=document.getElementById('esRO');if(ro)ro.value=d.ro==='yes'?'yes':'no';
-  var br=document.getElementById('esBrowse');if(br)br.value=d.browse==='no'?'no':'yes';
-  var m=document.getElementById('mEditShare');if(m)m.classList.add('open');
+function openEditShare(btn) {
+  var d = btn.dataset;
+  function s(id, v) { var el = document.getElementById(id); if (el) el.value = v || ""; }
+  s("esOrigName", d.name); s("esName", d.name); s("esPath", d.path);
+  s("esComment", d.comment); s("esUsers", d.users);
+  var ro = document.getElementById("esRO");
+  if (ro) ro.value = d.ro === "yes" ? "yes" : "no";
+  var br = document.getElementById("esBrowse");
+  if (br) br.value = d.browse === "no" ? "no" : "yes";
+  var m = document.getElementById("mEditShare");
+  if (m) m.classList.add("open");
 }
-function confirmDelShare(btn){
-  var name=btn.dataset.name;
-  if(!confirm('Remover share "'+name+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;
-  var inp=document.getElementById('delShareName');if(inp)inp.value=name;
-  var f=document.getElementById('fDelShare');if(f)f.submit();
+function confirmDelShare(btn) {
+  var name = btn.dataset.name;
+  if (!confirm("Remover share: " + name + "?\nA pasta no disco NAO sera apagada.")) return;
+  var inp = document.getElementById("delShareName");
+  if (inp) inp.value = name;
+  var f = document.getElementById("fDelShare");
+  if (f) f.submit();
 }
 </script>
 """)
