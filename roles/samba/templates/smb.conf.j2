@@ -30,6 +30,9 @@
     oplocks              = no
     level2 oplocks       = no
     kernel oplocks       = no
+    smb2 leases          = no
+    change notify        = yes
+    kernel change notify = yes
 
     log file             = {{ samba.log_dir }}/log.%m
     max log size         = 51200
