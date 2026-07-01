@@ -1345,8 +1345,14 @@ SHARES_T = BASE_T.replace("__BODY__", """
       <td class="text-muted" style="font-size:.74rem">{{ s.valid_users or '—' }}</td>
       <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openEditShare({{ s|tojson }})">✏ Editar</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name }}')">🗑</button>
+        <button class="btn btn-xs btn-edit-share"
+          data-name="{{ s.name|e }}"
+          data-path="{{ s.path|e }}"
+          data-comment="{{ s.comment|e }}"
+          data-users="{{ s.valid_users|e }}"
+          data-ro="{{ s.read_only|e }}"
+          data-browse="{{ s.browseable|e }}">✏ Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name|e }}')">🗑 Excluir</button>
       </td>
     </tr>
     {% endfor %}
@@ -1392,17 +1398,20 @@ SHARES_T = BASE_T.replace("__BODY__", """
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-function openEditShare(s){
-  document.getElementById('esOrigName').value=s.name;
-  document.getElementById('esName').value=s.name;
-  document.getElementById('esPath').value=s.path||'';
-  document.getElementById('esComment').value=s.comment||'';
-  document.getElementById('esUsers').value=s.valid_users||'';
-  document.getElementById('esRO').value=s.read_only||'no';
-  document.getElementById('esBrowse').value=s.browseable||'yes';
-  document.getElementById('mEditShare').classList.add('open');
-}
-function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
+document.querySelectorAll('.btn-edit-share').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var d=this.dataset;
+    document.getElementById('esOrigName').value=d.name||'';
+    document.getElementById('esName').value=d.name||'';
+    document.getElementById('esPath').value=d.path||'';
+    document.getElementById('esComment').value=d.comment||'';
+    document.getElementById('esUsers').value=d.users||'';
+    document.getElementById('esRO').value=d.ro||'no';
+    document.getElementById('esBrowse').value=d.browse||'yes';
+    document.getElementById('mEditShare').classList.add('open');
+  });
+});
+function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
 </script>
 """)
 
