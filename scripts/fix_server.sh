@@ -49,7 +49,7 @@ echo "==> Criando wrapper de criação de usuário..."
 cat > /usr/local/bin/cdpni-useradd << 'PYEOF'
 #!/usr/bin/env python3
 # Uso: cdpni-useradd <username>
-import sys, os, re, shutil
+import sys, os, re, shutil, subprocess
 
 username = sys.argv[1]
 
@@ -86,8 +86,8 @@ try:
 except FileNotFoundError:
     pass
 
-os.makedirs(home, mode=0o755, exist_ok=True)
-os.chown(home, uid, uid)
+subprocess.run(['mkdir', '-p', '-m', '755', home], check=True)
+subprocess.run(['chown', f'{uid}:{uid}', home], check=True)
 skel = '/etc/skel'
 if os.path.isdir(skel):
     for item in os.listdir(skel):
@@ -95,7 +95,7 @@ if os.path.isdir(skel):
         dst = os.path.join(home, item)
         if os.path.isfile(src):
             shutil.copy2(src, dst)
-            os.chown(dst, uid, uid)
+            subprocess.run(['chown', f'{uid}:{uid}', dst])
 
 print(f'Usuário {username} criado com uid={uid}')
 PYEOF

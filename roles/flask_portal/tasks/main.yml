@@ -178,24 +178,20 @@
       # Uso: cdpni-useradd <username>
       # Cria usuário Linux editando /etc/passwd, /etc/shadow, /etc/group, /etc/gshadow
       # diretamente, sem passar pelo kernel audit que bloqueia useradd.
-      import sys, os, crypt, random, string, subprocess
+      import sys, os, re, shutil, subprocess
 
       username = sys.argv[1]
 
-      # Valida nome
-      import re
       if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
           print(f'Nome inválido: {username}', file=sys.stderr)
           sys.exit(1)
 
-      # Verifica se já existe
       with open('/etc/passwd') as f:
           for line in f:
               if line.split(':')[0] == username:
                   print(f'Usuário já existe: {username}', file=sys.stderr)
                   sys.exit(1)
 
-      # Determina próximo UID >= 1000
       uids = set()
       with open('/etc/passwd') as f:
           for line in f:
@@ -205,34 +201,22 @@
               except (IndexError, ValueError):
                   pass
       uid = max((u for u in uids if u >= 1000), default=999) + 1
-
       home = f'/home/{username}'
 
-      # /etc/passwd
       with open('/etc/passwd', 'a') as f:
           f.write(f'{username}:x:{uid}:{uid}::{home}:/bin/bash\n')
-
-      # /etc/shadow — senha bloqueada, portal define depois via cdpni-setpass
       with open('/etc/shadow', 'a') as f:
           f.write(f'{username}:!::0:99999:7:::\n')
-
-      # /etc/group — grupo primário
       with open('/etc/group', 'a') as f:
           f.write(f'{username}:x:{uid}:\n')
-
-      # /etc/gshadow
       try:
           with open('/etc/gshadow', 'a') as f:
               f.write(f'{username}:!::\n')
       except FileNotFoundError:
           pass
 
-      # Cria home
-      os.makedirs(home, mode=0o755, exist_ok=True)
-      os.chown(home, uid, uid)
-
-      # Copia skel
-      import shutil
+      subprocess.run(['mkdir', '-p', '-m', '755', home], check=True)
+      subprocess.run(['chown', f'{uid}:{uid}', home], check=True)
       skel = '/etc/skel'
       if os.path.isdir(skel):
           for item in os.listdir(skel):
@@ -240,7 +224,7 @@
               dst = os.path.join(home, item)
               if os.path.isfile(src):
                   shutil.copy2(src, dst)
-                  os.chown(dst, uid, uid)
+                  subprocess.run(['chown', f'{uid}:{uid}', dst])
 
       print(f'Usuário {username} criado com uid={uid}')
     mode: "0700"
