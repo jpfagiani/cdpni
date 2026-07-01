@@ -1161,7 +1161,7 @@ def user_create():
     if add_samba:
         run(['sudo', 'smbpasswd', '-a', '-s', username], input_=f'{password}\n{password}\n')
     if is_admin:
-        run(['sudo', 'groupadd', '-f', ADMIN_GROUP])
+        run(['sudo', '/usr/local/bin/cdpni-groupadd', '-f', ADMIN_GROUP])
         add_group_member(username, ADMIN_GROUP)
     flash(f'Usuário "{username}" criado como {"administrador" if is_admin else "comum"}', 'success')
     return redirect(url_for('users_page'))
@@ -1174,7 +1174,7 @@ def user_role():
     if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
         flash('Usuário inválido', 'error')
         return redirect(url_for('users_page'))
-    run(['sudo', 'groupadd', '-f', ADMIN_GROUP])
+    run(['sudo', '/usr/local/bin/cdpni-groupadd', '-f', ADMIN_GROUP])
     if role == 'admin':
         add_group_member(username, ADMIN_GROUP)
         flash(f'"{username}" promovido a administrador', 'success')
@@ -1372,7 +1372,7 @@ def group_create():
     if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', groupname):
         flash('Nome de grupo inválido', 'error')
         return redirect(url_for('groups_page'))
-    rc, _, err = run(['sudo', 'groupadd', groupname])
+    rc, _, err = run(['sudo', '/usr/local/bin/cdpni-groupadd', groupname])
     if rc != 0:
         flash(f'Erro ao criar grupo: {err}', 'error')
     else:

@@ -45,6 +45,60 @@ PYEOF
 chmod 700 /usr/local/bin/cdpni-setgroup
 echo "    OK: /usr/local/bin/cdpni-setgroup"
 
+echo "==> Criando wrapper de criação de grupo..."
+cat > /usr/local/bin/cdpni-groupadd << 'PYEOF'
+#!/usr/bin/env python3
+# Uso: cdpni-groupadd [-f] <groupname>
+# Usa groupadd e corrige /etc/gshadow manualmente se necessário.
+import sys, re, subprocess
+
+args = sys.argv[1:]
+force = '-f' in args
+groupname = next(a for a in args if not a.startswith('-'))
+
+if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', groupname):
+    print(f'Nome inválido: {groupname}', file=sys.stderr)
+    sys.exit(1)
+
+# Verifica se já existe
+with open('/etc/group') as f:
+    exists = any(line.split(':')[0] == groupname for line in f)
+
+if exists:
+    if force:
+        sys.exit(0)
+    print(f'Grupo já existe: {groupname}', file=sys.stderr)
+    sys.exit(9)  # mesmo código do groupadd -f quando não usa -f
+
+cmd = ['groupadd']
+if force:
+    cmd.append('-f')
+cmd.append(groupname)
+result = subprocess.run(cmd, capture_output=True, text=True)
+
+# Verifica se o grupo foi criado
+with open('/etc/group') as f:
+    created = any(line.split(':')[0] == groupname for line in f)
+
+if not created:
+    print(result.stderr or 'groupadd falhou', file=sys.stderr)
+    sys.exit(1)
+
+# Corrige /etc/gshadow se necessário
+try:
+    with open('/etc/gshadow') as f:
+        content = f.read()
+    if not any(l.split(':')[0] == groupname for l in content.splitlines()):
+        with open('/etc/gshadow', 'a') as f:
+            f.write(f'{groupname}:!::\n')
+except FileNotFoundError:
+    pass
+
+print(f'Grupo {groupname} criado')
+PYEOF
+chmod 700 /usr/local/bin/cdpni-groupadd
+echo "    OK: /usr/local/bin/cdpni-groupadd"
+
 echo "==> Criando wrapper de criação de usuário..."
 cat > /usr/local/bin/cdpni-useradd << 'PYEOF'
 #!/usr/bin/env python3
@@ -95,7 +149,7 @@ echo "    OK: /usr/local/bin/cdpni-useradd"
 echo "==> Atualizando sudoers..."
 cat > /etc/sudoers.d/cdpni-portal << 'EOF'
 Defaults:cdpni !log_allowed, !syslog
-cdpni ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
+cdpni ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/local/bin/cdpni-groupadd, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
 EOF
 chmod 440 /etc/sudoers.d/cdpni-portal
 visudo -cf /etc/sudoers.d/cdpni-portal && echo "    OK: /etc/sudoers.d/cdpni-portal"
