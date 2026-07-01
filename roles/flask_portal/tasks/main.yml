@@ -99,6 +99,15 @@
     group: "{{ portal.user }}"
     mode: "0640"
 
+- name: Criar permissions.json se não existir
+  ansible.builtin.copy:
+    dest: "{{ portal.dir }}/permissions.json"
+    content: "{}"
+    owner: "{{ portal.user }}"
+    group: "{{ portal.user }}"
+    mode: "0640"
+    force: false
+
 - name: Configurar ACL para o usuário do portal acessar os shares
   ansible.posix.acl:
     path: "{{ item }}"

@@ -18,6 +18,7 @@ PORTAL_DIR   = os.path.dirname(os.path.abspath(__file__))
 BANNER_DIR   = os.path.join(PORTAL_DIR, 'banners')
 SMB_CONF     = '/etc/samba/smb.conf'
 BACKUP_DIR   = app.config.get('BACKUP_DIR', '/opt/backups')
+PERMS_FILE   = os.path.join(PORTAL_DIR, 'permissions.json')
 os.makedirs(BANNER_DIR, exist_ok=True)
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -137,42 +138,20 @@ def get_admin_group_members() -> set:
         pass
     return set()
 
+def _load_perms_file() -> dict:
+    try:
+        with open(PERMS_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_perms_file(data: dict):
+    with open(PERMS_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
 def get_user_share_perms(username: str) -> dict:
-    """Retorna dict {share_name: 'rwx'} para o usuário via getfacl + grupos."""
-    perms = {}
-    # grupos do usuário
-    user_groups = set()
-    try:
-        with open('/etc/group') as f:
-            for line in f:
-                parts = line.strip().split(':')
-                if len(parts) >= 4 and username in parts[3].split(','):
-                    user_groups.add(parts[0])
-    except Exception:
-        pass
-    try:
-        shares = parse_smb_shares()
-        for s in shares:
-            path = s.get('path', '')
-            if not path or not os.path.isdir(path):
-                continue
-            out = subprocess.run(['sudo', 'getfacl', '-p', path],
-                capture_output=True, text=True).stdout
-            found = ''
-            for line in out.splitlines():
-                # ACL explícita de usuário tem prioridade
-                if line.startswith(f'user:{username}:'):
-                    found = line.split(':')[2]
-                    break
-                # ACL via grupo do usuário
-                if not found and line.startswith('group:'):
-                    parts = line.split(':')
-                    if len(parts) >= 3 and parts[1] in user_groups:
-                        found = parts[2]
-            perms[s['name']] = found
-    except Exception:
-        pass
-    return perms
+    """Retorna dict {share_name: 'rwx'} para o usuário (armazenado em JSON)."""
+    return _load_perms_file().get(username, {})
 
 def get_system_users() -> list[dict]:
     users = []
@@ -1207,18 +1186,22 @@ def user_permissions():
         flash('Usuário inválido', 'error')
         return redirect(url_for('users_page'))
     shares = parse_smb_shares()
+    all_perms = _load_perms_file()
+    user_p = {}
     for s in shares:
         path = s.get('path', '')
-        if not path or not os.path.isdir(path):
-            continue
-        r = 'r' if request.form.get(f'perm_{s["name"]}_r') else '-'
-        w = 'w' if request.form.get(f'perm_{s["name"]}_w') else '-'
-        x = 'x' if request.form.get(f'perm_{s["name"]}_x') else '-'
-        perm_str = f'{r}{w}{x}'.replace('-', '')
-        if perm_str:
-            run(['sudo', 'setfacl', '-m', f'u:{username}:{perm_str}', path])
-        else:
-            run(['sudo', 'setfacl', '-x', f'u:{username}', path])
+        r = 'r' if request.form.get(f'perm_{s["name"]}_r') else ''
+        w = 'w' if request.form.get(f'perm_{s["name"]}_w') else ''
+        x = 'x' if request.form.get(f'perm_{s["name"]}_x') else ''
+        perm_str = r + w + x
+        user_p[s['name']] = perm_str
+        if path and os.path.isdir(path):
+            if perm_str:
+                run(['sudo', 'setfacl', '-m', f'u:{username}:{perm_str}', path])
+            else:
+                run(['sudo', 'setfacl', '-x', f'u:{username}', path])
+    all_perms[username] = user_p
+    _save_perms_file(all_perms)
     flash(f'Permissões de "{username}" atualizadas', 'success')
     return redirect(url_for('users_page'))
 
