@@ -1431,8 +1431,17 @@ SHARES_T = BASE_T.replace("__BODY__", """
       <td class="text-muted" style="font-size:.74rem">{{ s.valid_users or '—' }}</td>
       <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openEditShare({{ loop.index0 }})">Editar</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelShare({{ loop.index0 }})">Excluir</button>
+        <button class="btn btn-xs"
+          data-name="{{ s.name|e }}"
+          data-path="{{ s.path|e }}"
+          data-comment="{{ s.comment|e }}"
+          data-users="{{ s.valid_users|e }}"
+          data-ro="{{ s.read_only|e }}"
+          data-browse="{{ s.browseable|e }}"
+          onclick="openEditShare(this)">Editar</button>
+        <button class="btn btn-xs btn-danger"
+          data-name="{{ s.name|e }}"
+          onclick="confirmDelShare(this)">Excluir</button>
       </td>
     </tr>
     {% endfor %}
@@ -1441,7 +1450,7 @@ SHARES_T = BASE_T.replace("__BODY__", """
 </div>
 <div class="modal-bg" id="mNewShare"><div class="modal"><div class="modal-title"><h3>Novo Share</h3><button type="button" class="modal-close" onclick="closeModal('mNewShare')">&times;</button></div>
   <form method="post" action="{{ url_for('share_create') }}">
-    <div class="form-group"><label>Nome do share</label><input type="text" name="name" id="nsName" required autofocus oninput="autoPath()"></div>
+    <div class="form-group"><label>Nome do share</label><input type="text" name="name" id="nsName" required autofocus></div>
     <div class="form-group">
       <label>Caminho (path)</label>
       <input type="text" name="path" id="nsPath" placeholder="/mnt/raid/shares/nome" required>
@@ -1480,30 +1489,35 @@ SHARES_T = BASE_T.replace("__BODY__", """
   <input type="hidden" name="name" id="delShareName">
 </form>
 <script>
-var SHARES_DATA = {{ shares|tojson }};
 function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.modal-bg').forEach(function(m){m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open');});});
+document.querySelectorAll('.modal-bg').forEach(function(m){
+  m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open');});
+});
 var _pathEdited=false;
-function autoPath(){
-  if(_pathEdited) return;
-  var n=document.getElementById('nsName');
-  var p=document.getElementById('nsPath');
-  if(n&&p) p.value=n.value.trim()?'/mnt/raid/shares/'+n.value.trim():'';
-}
-(function(){var p=document.getElementById('nsPath');if(p)p.addEventListener('input',function(){_pathEdited=this.value!=='';});})();
-function openEditShare(idx){
-  var s=SHARES_DATA[idx];
-  document.getElementById('esOrigName').value=s.name||'';
-  document.getElementById('esName').value=s.name||'';
-  document.getElementById('esPath').value=s.path||'';
-  document.getElementById('esComment').value=s.comment||'';
-  document.getElementById('esUsers').value=s.valid_users||'';
-  document.getElementById('esRO').value=s.read_only||'no';
-  document.getElementById('esBrowse').value=s.browseable||'yes';
+document.getElementById('nsName').addEventListener('input',function(){
+  if(!_pathEdited){
+    var v=this.value.trim();
+    document.getElementById('nsPath').value=v?'/mnt/raid/shares/'+v:'';
+  }
+});
+document.getElementById('nsPath').addEventListener('input',function(){
+  _pathEdited=this.value!=='';
+});
+function openEditShare(btn){
+  var d=btn.dataset;
+  document.getElementById('esOrigName').value=d.name||'';
+  document.getElementById('esName').value=d.name||'';
+  document.getElementById('esPath').value=d.path||'';
+  document.getElementById('esComment').value=d.comment||'';
+  document.getElementById('esUsers').value=d.users||'';
+  var ro=document.getElementById('esRO');
+  ro.value=(d.ro==='yes')?'yes':'no';
+  var br=document.getElementById('esBrowse');
+  br.value=(d.browse==='no')?'no':'yes';
   document.getElementById('mEditShare').classList.add('open');
 }
-function confirmDelShare(idx){
-  var name=SHARES_DATA[idx].name;
+function confirmDelShare(btn){
+  var name=btn.dataset.name;
   if(!confirm('Remover share "'+name+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;
   document.getElementById('delShareName').value=name;
   document.getElementById('fDelShare').submit();
