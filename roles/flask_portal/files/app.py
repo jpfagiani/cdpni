@@ -1637,11 +1637,28 @@ def raid_smart():
 
 # ── backups ────────────────────────────────────────────────────────────────────
 BACKUPS_T = BASE_T.replace("__BODY__", """
-<div class="page-title">🗄️ Backups <small>{{ backup_dir }}</small></div>
-<div class="actions">
-  <form method="post" action="{{ url_for('backup_run') }}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Iniciando...'">
-    <button type="submit" class="btn btn-primary">▶ Executar Backup Agora</button>
-  </form>
+<div class="page-title">🗄️ Backups</div>
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-header"><h3>Novo Backup</h3></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('backup_run') }}" onsubmit="this.querySelector('[type=submit]').disabled=true;this.querySelector('[type=submit]').textContent='Iniciando...'">
+      <div class="form-group">
+        <label>Destino do backup</label>
+        <input type="text" name="backup_dest" value="{{ backup_dir }}" style="width:100%;font-family:var(--mono);font-size:.82rem" placeholder="/mnt/raid/backups">
+        <small class="text-muted">Caminho absoluto onde o arquivo .tar.gz será salvo</small>
+      </div>
+      <div class="form-group">
+        <label>Incluir no backup</label>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem .75rem;margin-top:.25rem">
+          <label style="font-weight:400;font-size:.83rem"><input type="checkbox" name="inc_shares" value="1" checked> Compartilhamentos (<code>{{ samba_root }}</code>)</label>
+          <label style="font-weight:400;font-size:.83rem"><input type="checkbox" name="inc_samba"  value="1" checked> Configuração Samba (<code>/etc/samba</code>)</label>
+          <label style="font-weight:400;font-size:.83rem"><input type="checkbox" name="inc_users"  value="1" checked> Usuários/Grupos (<code>/etc/passwd, shadow, group</code>)</label>
+          <label style="font-weight:400;font-size:.83rem"><input type="checkbox" name="inc_portal" value="1" checked> Portal (<code>/opt/cdpni-portal</code>)</label>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">▶ Executar Backup</button>
+    </form>
+  </div>
 </div>
 <div class="card">
   <div class="card-header"><h3>Histórico de Backups</h3><span class="text-muted" style="font-size:.76rem">{{ backups|length }} arquivos</span></div>
@@ -1678,24 +1695,28 @@ function confirmDelBackup(n){if(!confirm('Excluir "'+n+'"?'))return;document.get
 @admin_required
 def backups_page():
     return render_template_string(BACKUPS_T,
-        backups=get_backups(), backup_dir=BACKUP_DIR,
+        backups=get_backups(), backup_dir=BACKUP_DIR, samba_root=SAMBA_ROOT,
         session=session, banner=get_banner(), active='backups', is_admin=True)
 
 @app.route('/admin/backups/run', methods=['GET', 'POST'])
 @admin_required
 def backup_run():
     try:
-        script = app.config.get('BACKUP_SCRIPT', '/opt/scripts/backup.sh')
-        os.makedirs(BACKUP_DIR, exist_ok=True)
-        if os.path.exists(script):
-            subprocess.Popen(['sudo', 'bash', script])
-            flash('Backup iniciado em background', 'success')
-        else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            out_file = os.path.join(BACKUP_DIR, f'shares_{timestamp}.tar.gz')
-            tar = '/usr/bin/tar' if os.path.exists('/usr/bin/tar') else '/bin/tar'
-            subprocess.Popen(['sudo', tar, '-czf', out_file, SAMBA_ROOT])
-            flash(f'Backup iniciado → {out_file}', 'success')
+        dest = request.form.get('backup_dest', BACKUP_DIR).strip() or BACKUP_DIR
+        run(['sudo', 'mkdir', '-p', dest])
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        out_file  = os.path.join(dest, f'backup_{timestamp}.tar.gz')
+        tar = '/usr/bin/tar' if os.path.exists('/usr/bin/tar') else '/bin/tar'
+        targets = []
+        if request.form.get('inc_shares'): targets.append(SAMBA_ROOT)
+        if request.form.get('inc_samba'):  targets.append('/etc/samba')
+        if request.form.get('inc_users'):  targets += ['/etc/passwd', '/etc/shadow', '/etc/group']
+        if request.form.get('inc_portal'): targets.append('/opt/cdpni-portal')
+        if not targets:
+            flash('Selecione ao menos um item para incluir no backup.', 'error')
+            return redirect(url_for('backups_page'))
+        subprocess.Popen(['sudo', tar, '-czf', out_file] + targets)
+        flash(f'Backup iniciado → {out_file}', 'success')
     except Exception as e:
         flash(f'Erro ao iniciar backup: {e}', 'error')
     return redirect(url_for('backups_page'))
