@@ -1450,10 +1450,10 @@ SHARES_T = BASE_T.replace("__BODY__", """
 </div>
 <div class="modal-bg" id="mNewShare"><div class="modal"><div class="modal-title"><h3>Novo Share</h3><button type="button" class="modal-close" onclick="closeModal('mNewShare')">&times;</button></div>
   <form method="post" action="{{ url_for('share_create') }}">
-    <div class="form-group"><label>Nome do share</label><input type="text" name="name" id="nsName" required autofocus></div>
+    <div class="form-group"><label>Nome do share</label><input type="text" name="name" id="nsName" required autofocus oninput="nsAutoPath(this)"></div>
     <div class="form-group">
       <label>Caminho (path)</label>
-      <input type="text" name="path" id="nsPath" placeholder="/mnt/raid/shares/nome" required>
+      <input type="text" name="path" id="nsPath" placeholder="/mnt/raid/shares/nome" required oninput="window._nsPathEdited=true">
       <small class="text-muted">Preenchido automaticamente — edite se necessário</small>
     </div>
     <div class="form-group"><label>Comentário</label><input type="text" name="comment"></div>
@@ -1489,38 +1489,30 @@ SHARES_T = BASE_T.replace("__BODY__", """
   <input type="hidden" name="name" id="delShareName">
 </form>
 <script>
-function closeModal(id){document.getElementById(id).classList.remove('open');}
+window._nsPathEdited=false;
+function nsAutoPath(inp){
+  if(window._nsPathEdited)return;
+  var p=document.getElementById('nsPath');
+  if(p)p.value=inp.value.trim()?'/mnt/raid/shares/'+inp.value.trim():'';
+}
+function closeModal(id){var el=document.getElementById(id);if(el)el.classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(function(m){
   m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open');});
 });
-var _pathEdited=false;
-document.getElementById('nsName').addEventListener('input',function(){
-  if(!_pathEdited){
-    var v=this.value.trim();
-    document.getElementById('nsPath').value=v?'/mnt/raid/shares/'+v:'';
-  }
-});
-document.getElementById('nsPath').addEventListener('input',function(){
-  _pathEdited=this.value!=='';
-});
 function openEditShare(btn){
   var d=btn.dataset;
-  document.getElementById('esOrigName').value=d.name||'';
-  document.getElementById('esName').value=d.name||'';
-  document.getElementById('esPath').value=d.path||'';
-  document.getElementById('esComment').value=d.comment||'';
-  document.getElementById('esUsers').value=d.users||'';
-  var ro=document.getElementById('esRO');
-  ro.value=(d.ro==='yes')?'yes':'no';
-  var br=document.getElementById('esBrowse');
-  br.value=(d.browse==='no')?'no':'yes';
-  document.getElementById('mEditShare').classList.add('open');
+  var set=function(id,v){var el=document.getElementById(id);if(el)el.value=v||'';};
+  set('esOrigName',d.name);set('esName',d.name);set('esPath',d.path);
+  set('esComment',d.comment);set('esUsers',d.users);
+  var ro=document.getElementById('esRO');if(ro)ro.value=d.ro==='yes'?'yes':'no';
+  var br=document.getElementById('esBrowse');if(br)br.value=d.browse==='no'?'no':'yes';
+  var m=document.getElementById('mEditShare');if(m)m.classList.add('open');
 }
 function confirmDelShare(btn){
   var name=btn.dataset.name;
   if(!confirm('Remover share "'+name+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;
-  document.getElementById('delShareName').value=name;
-  document.getElementById('fDelShare').submit();
+  var inp=document.getElementById('delShareName');if(inp)inp.value=name;
+  var f=document.getElementById('fDelShare');if(f)f.submit();
 }
 </script>
 """)
