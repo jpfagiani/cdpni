@@ -1516,7 +1516,7 @@ function openEditShare(btn) {
 }
 function confirmDelShare(btn) {
   var name = btn.dataset.name;
-  if (!confirm("Remover share: " + name + "?\nA pasta no disco NAO sera apagada.")) return;
+  if (!confirm("Remover share: " + name + "?\\nA pasta no disco nao sera apagada.")) return;
   var inp = document.getElementById("delShareName");
   if (inp) inp.value = name;
   var f = document.getElementById("fDelShare");
