@@ -64,6 +64,41 @@ PYEOF
 echo "==> Validando smb.conf..."
 testparm -s "$SMB_CONF" > /dev/null && echo "    OK: testparm passou"
 
+echo "==> Corrigindo grupo e permissão em arquivos existentes nos shares..."
+python3 << 'PYEOF'
+import re, os, subprocess
+
+conf_path = '/etc/samba/smb.conf'
+with open(conf_path) as f:
+    content = f.read()
+
+SKIP = {'global', 'recycle', 'homes', 'printers'}
+
+for m in re.finditer(r'\[([^\]]+)\]\s*\n(.*?)(?=\[|\Z)', content, re.DOTALL):
+    share_name = m.group(1).strip()
+    body       = m.group(2)
+    if share_name.lower() in SKIP:
+        continue
+    grp = 'grp_' + share_name.lower()
+
+    # descobre o path do share
+    pm = re.search(r'^\s*path\s*=\s*(.+)', body, re.MULTILINE)
+    if not pm:
+        continue
+    path = pm.group(1).strip()
+    if not os.path.isdir(path):
+        print(f'    AVISO: {path} não existe, pulando {share_name}')
+        continue
+
+    print(f'    {share_name}: chown -R :{grp} + chmod -R g+rw {path}')
+    subprocess.run(['chown', '-R', f':{grp}', path])
+    # garante rw para grupo em todos os arquivos; diretórios ficam com rwx
+    subprocess.run(['find', path, '-type', 'f', '-exec', 'chmod', 'g+rw', '{}', '+'])
+    subprocess.run(['find', path, '-type', 'd', '-exec', 'chmod', 'g+rwx', '{}', '+'])
+
+print('    Permissões recursivas aplicadas.')
+PYEOF
+
 echo "==> Reiniciando smbd..."
 systemctl restart smbd
 systemctl is-active smbd && echo "    OK: smbd ativo"
