@@ -27,6 +27,9 @@
     write raw            = yes
     max xmit             = 65535
     dead time            = 15
+    oplocks              = no
+    level2 oplocks       = no
+    kernel oplocks       = no
 
     log file             = {{ samba.log_dir }}/log.%m
     max log size         = 51200
