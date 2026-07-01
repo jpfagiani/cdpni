@@ -940,22 +940,20 @@ USERS_T = BASE_T.replace("__BODY__", """
       </td>
       <td class="text-right nowrap">
         <span style="display:inline-flex;gap:3px;align-items:center">
-          <button class="btn btn-xs" onclick="openResetPass('{{ u.name }}')">Senha</button>
-          <button class="btn btn-xs" onclick="openPerms('{{ u.name }}')">Permissões</button>
+          <button class="btn btn-xs" style="min-width:62px" onclick="openResetPass('{{ u.name }}')">Senha</button>
+          <button class="btn btn-xs" style="min-width:82px" onclick="openPerms('{{ u.name }}')">Permissões</button>
           {% if u.name != session.user %}
-          <span style="width:1px;height:14px;background:var(--border);display:inline-block;margin:0 2px"></span>
           {% if u.is_admin %}
-            <button class="btn btn-xs btn-warn" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
+            <button class="btn btn-xs btn-warn" style="min-width:106px" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
           {% else %}
-            <button class="btn btn-xs btn-success" onclick="confirmRole('{{ u.name }}','admin')">↑ Tornar Admin</button>
+            <button class="btn btn-xs btn-success" style="min-width:106px" onclick="confirmRole('{{ u.name }}','admin')">↑ Tornar Admin</button>
           {% endif %}
           {% if u.active %}
-            <button class="btn btn-xs btn-warn" onclick="confirmToggle('{{ u.name }}','deactivate')">Inativar</button>
+            <button class="btn btn-xs btn-warn" style="min-width:62px" onclick="confirmToggle('{{ u.name }}','deactivate')">Inativar</button>
           {% else %}
-            <button class="btn btn-xs btn-success" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
+            <button class="btn btn-xs btn-success" style="min-width:62px" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
           {% endif %}
-          <span style="width:1px;height:14px;background:var(--border);display:inline-block;margin:0 2px"></span>
-          <button class="btn btn-xs btn-danger" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
+          <button class="btn btn-xs btn-danger" style="min-width:56px" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
           {% endif %}
         </span>
       </td>
@@ -1349,7 +1347,13 @@ SHARES_T = BASE_T.replace("__BODY__", """
       <td class="text-muted" style="font-size:.74rem">{{ s.valid_users or '—' }}</td>
       <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openEditShare('{{ s.name|e }}','{{ s.path|e }}','{{ s.comment|e }}','{{ s.valid_users|e }}','{{ s.read_only|e }}','{{ s.browseable|e }}')">Editar</button>
+        <button class="btn btn-xs" onclick="openEditShare(this)"
+          data-name="{{ s.name }}"
+          data-path="{{ s.path }}"
+          data-comment="{{ s.comment }}"
+          data-users="{{ s.valid_users }}"
+          data-ro="{{ s.read_only }}"
+          data-browse="{{ s.browseable }}">Editar</button>
         <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name|e }}')">Excluir</button>
       </td>
     </tr>
@@ -1396,14 +1400,15 @@ SHARES_T = BASE_T.replace("__BODY__", """
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-function openEditShare(name,path,comment,users,ro,browse){
-  document.getElementById('esOrigName').value=name;
-  document.getElementById('esName').value=name;
-  document.getElementById('esPath').value=path;
-  document.getElementById('esComment').value=comment;
-  document.getElementById('esUsers').value=users;
-  document.getElementById('esRO').value=ro||'no';
-  document.getElementById('esBrowse').value=browse||'yes';
+function openEditShare(btn){
+  var d=btn.dataset;
+  document.getElementById('esOrigName').value=d.name||'';
+  document.getElementById('esName').value=d.name||'';
+  document.getElementById('esPath').value=d.path||'';
+  document.getElementById('esComment').value=d.comment||'';
+  document.getElementById('esUsers').value=d.users||'';
+  document.getElementById('esRO').value=d.ro||'no';
+  document.getElementById('esBrowse').value=d.browse||'yes';
   document.getElementById('mEditShare').classList.add('open');
 }
 function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
