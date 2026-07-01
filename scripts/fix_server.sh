@@ -71,7 +71,7 @@ with open('/etc/passwd') as f:
             uids.add(int(parts[2]))
         except (IndexError, ValueError):
             pass
-uid = max((u for u in uids if u >= 1000), default=999) + 1
+uid = max((u for u in uids if 1000 <= u < 60000), default=999) + 1
 home = f'/home/{username}'
 
 with open('/etc/passwd', 'a') as f:
