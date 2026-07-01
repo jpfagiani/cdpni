@@ -138,22 +138,38 @@ def get_admin_group_members() -> set:
     return set()
 
 def get_user_share_perms(username: str) -> dict:
-    """Retorna dict {share_path: 'rwx'} para o usuário via getfacl."""
+    """Retorna dict {share_name: 'rwx'} para o usuário via getfacl + grupos."""
     perms = {}
+    # grupos do usuário
+    user_groups = set()
+    try:
+        with open('/etc/group') as f:
+            for line in f:
+                parts = line.strip().split(':')
+                if len(parts) >= 4 and username in parts[3].split(','):
+                    user_groups.add(parts[0])
+    except Exception:
+        pass
     try:
         shares = parse_smb_shares()
         for s in shares:
             path = s.get('path', '')
             if not path or not os.path.isdir(path):
                 continue
-            out = subprocess.run(['getfacl', '-p', path],
+            out = subprocess.run(['sudo', 'getfacl', '-p', path],
                 capture_output=True, text=True).stdout
+            found = ''
             for line in out.splitlines():
+                # ACL explícita de usuário tem prioridade
                 if line.startswith(f'user:{username}:'):
-                    perms[s['name']] = line.split(':')[2]
+                    found = line.split(':')[2]
                     break
-            else:
-                perms[s['name']] = ''
+                # ACL via grupo do usuário
+                if not found and line.startswith('group:'):
+                    parts = line.split(':')
+                    if len(parts) >= 3 and parts[1] in user_groups:
+                        found = parts[2]
+            perms[s['name']] = found
     except Exception:
         pass
     return perms
