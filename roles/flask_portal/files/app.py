@@ -1362,14 +1362,8 @@ SHARES_T = BASE_T.replace("__BODY__", """
       <td class="text-muted" style="font-size:.74rem">{{ s.valid_users or '—' }}</td>
       <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
       <td class="text-right nowrap">
-        <button class="btn btn-xs" onclick="openEditShare(this)"
-          data-name="{{ s.name|e }}"
-          data-path="{{ s.path|e }}"
-          data-comment="{{ s.comment|e }}"
-          data-users="{{ s.valid_users|e }}"
-          data-ro="{{ s.read_only|e }}"
-          data-browse="{{ s.browseable|e }}">Editar</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name|e }}')">Excluir</button>
+        <button class="btn btn-xs" onclick="openEditShare({{ loop.index0 }})">Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelShare({{ loop.index0 }})">Excluir</button>
       </td>
     </tr>
     {% endfor %}
@@ -1417,38 +1411,33 @@ SHARES_T = BASE_T.replace("__BODY__", """
   <input type="hidden" name="name" id="delShareName">
 </form>
 <script>
+var SHARES_DATA = {{ shares|tojson }};
 function closeModal(id){document.getElementById(id).classList.remove('open');}
-document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+document.querySelectorAll('.modal-bg').forEach(function(m){m.addEventListener('click',function(e){if(e.target===m)m.classList.remove('open');});});
 var _pathEdited=false;
 function autoPath(){
   if(_pathEdited) return;
   var name=document.getElementById('nsName').value.trim();
-  document.getElementById('nsPath').value=name ? '/mnt/raid/shares/'+name : '';
+  document.getElementById('nsPath').value=name?'/mnt/raid/shares/'+name:'';
 }
-document.addEventListener('DOMContentLoaded',function(){
-  var p=document.getElementById('nsPath');
-  if(p) p.addEventListener('input',function(){_pathEdited=this.value!=='';});
-  var modal=document.getElementById('mNewShare');
-  if(modal) modal.addEventListener('click',function(e){
-    if(e.target===this){_pathEdited=false;document.getElementById('nsName').value='';document.getElementById('nsPath').value='';}
-  });
-});
-function openEditShare(btn){
-  try{
-    var d=btn.dataset;
-    document.getElementById('esOrigName').value=d.name||'';
-    document.getElementById('esName').value=d.name||'';
-    document.getElementById('esPath').value=d.path||'';
-    document.getElementById('esComment').value=d.comment||'';
-    document.getElementById('esUsers').value=d.users||'';
-    var ro=document.getElementById('esRO');
-    ro.value=(d.ro==='yes')?'yes':'no';
-    var br=document.getElementById('esBrowse');
-    br.value=(d.browse==='no')?'no':'yes';
-    document.getElementById('mEditShare').classList.add('open');
-  }catch(e){alert('Erro ao abrir edição: '+e.message);}
+document.getElementById('nsPath').addEventListener('input',function(){_pathEdited=this.value!=='';});
+function openEditShare(idx){
+  var s=SHARES_DATA[idx];
+  document.getElementById('esOrigName').value=s.name||'';
+  document.getElementById('esName').value=s.name||'';
+  document.getElementById('esPath').value=s.path||'';
+  document.getElementById('esComment').value=s.comment||'';
+  document.getElementById('esUsers').value=s.valid_users||'';
+  document.getElementById('esRO').value=s.read_only||'no';
+  document.getElementById('esBrowse').value=s.browseable||'yes';
+  document.getElementById('mEditShare').classList.add('open');
 }
-function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
+function confirmDelShare(idx){
+  var name=SHARES_DATA[idx].name;
+  if(!confirm('Remover share "'+name+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;
+  document.getElementById('delShareName').value=name;
+  document.getElementById('fDelShare').submit();
+}
 </script>
 """)
 
