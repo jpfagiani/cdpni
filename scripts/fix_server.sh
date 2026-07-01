@@ -219,7 +219,7 @@ if [[ ! "$disk" =~ ^/dev/[a-z]+$ ]]; then
     echo "Dispositivo inválido: $disk" >&2
     exit 1
 fi
-exec smartctl -a "$disk"
+exec /usr/sbin/smartctl -a "$disk"
 EOF
 chmod 700 /usr/local/bin/cdpni-smart
 echo "    OK: /usr/local/bin/cdpni-smart"
