@@ -992,7 +992,15 @@ USERS_T = BASE_T.replace("__BODY__", """
     <input type="hidden" name="username" id="permsUsername">
     <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Usuário: <strong id="permsUserLabel"></strong></p>
     <table style="width:100%">
-      <thead><tr><th>Compartilhamento</th><th style="text-align:center">Ler</th><th style="text-align:center">Escrever</th><th style="text-align:center">Executar</th></tr></thead>
+      <thead>
+        <tr><th>Compartilhamento</th><th style="text-align:center">Ler</th><th style="text-align:center">Escrever</th><th style="text-align:center">Executar</th></tr>
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="font-size:.75rem;color:var(--muted);padding-bottom:.4rem">Selecionar todos</td>
+          <td style="text-align:center;padding-bottom:.4rem"><input type="checkbox" id="chkAllR" title="Selecionar todos Ler" onchange="toggleAll('_r',this.checked)"></td>
+          <td style="text-align:center;padding-bottom:.4rem"><input type="checkbox" id="chkAllW" title="Selecionar todos Escrever" onchange="toggleAll('_w',this.checked)"></td>
+          <td style="text-align:center;padding-bottom:.4rem"><input type="checkbox" id="chkAllX" title="Selecionar todos Executar" onchange="toggleAll('_x',this.checked)"></td>
+        </tr>
+      </thead>
       <tbody id="permsBody"></tbody>
     </table>
     <div class="modal-footer" style="margin-top:1rem">
@@ -1034,9 +1042,15 @@ function confirmRole(u,role){
   document.getElementById('roleValue').value=role;
   document.getElementById('fRoleUser').submit();
 }
+function toggleAll(suffix, checked){
+  document.querySelectorAll('#permsBody input[type=checkbox]').forEach(function(cb){
+    if(cb.name.endsWith(suffix)) cb.checked=checked;
+  });
+}
 function openPerms(u){
   document.getElementById('permsUsername').value=u;
   document.getElementById('permsUserLabel').textContent=u;
+  ['chkAllR','chkAllW','chkAllX'].forEach(function(id){document.getElementById(id).checked=false;});
   var perms=USER_PERMS[u]||{};
   var tbody=document.getElementById('permsBody');
   tbody.innerHTML='';
