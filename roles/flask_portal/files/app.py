@@ -163,10 +163,14 @@ def get_system_groups() -> list[dict]:
                 if len(parts) < 4:
                     continue
                 gid = int(parts[2])
-                if gid < 1000 or gid > 60000:
+                name = parts[0]
+                # inclui grupos de usuários (≥1000) e grupos samba/cdpni de sistema
+                is_user_group = gid >= 1000 and gid <= 60000
+                is_samba_group = name.startswith('grp_') or name in ('cdpni-admins', 'sambadmin')
+                if not is_user_group and not is_samba_group:
                     continue
-                members = [m for m in parts[3].split(',') if m and m in sys_users]
-                groups.append({'name': parts[0], 'gid': gid, 'members': members})
+                members = [m for m in parts[3].split(',') if m]
+                groups.append({'name': name, 'gid': gid, 'members': members})
     except Exception:
         pass
     return sorted(groups, key=lambda g: g['name'])
