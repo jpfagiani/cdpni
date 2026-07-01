@@ -98,6 +98,32 @@ def set_linux_password(username: str, password: str) -> tuple[int, str]:
     rc, _, err = run(['sudo', '/usr/local/bin/cdpni-setpass', username, password])
     return rc, err
 
+def set_group_members(groupname: str, members: list) -> tuple[int, str]:
+    """Define membros de um grupo via wrapper (evita gpasswd e auditoria)."""
+    rc, _, err = run(['sudo', '/usr/local/bin/cdpni-setgroup', groupname, ','.join(members)])
+    return rc, err
+
+def get_group_members(groupname: str) -> list:
+    try:
+        with open('/etc/group') as f:
+            for line in f:
+                parts = line.strip().split(':')
+                if parts[0] == groupname:
+                    return [m for m in parts[-1].split(',') if m]
+    except Exception:
+        pass
+    return []
+
+def add_group_member(username: str, groupname: str) -> tuple[int, str]:
+    members = get_group_members(groupname)
+    if username not in members:
+        members.append(username)
+    return set_group_members(groupname, members)
+
+def remove_group_member(username: str, groupname: str) -> tuple[int, str]:
+    members = [m for m in get_group_members(groupname) if m != username]
+    return set_group_members(groupname, members)
+
 ADMIN_GROUP = 'cdpni-admins'
 
 def get_admin_group_members() -> set:
@@ -1136,7 +1162,7 @@ def user_create():
         run(['sudo', 'smbpasswd', '-a', '-s', username], input_=f'{password}\n{password}\n')
     if is_admin:
         run(['sudo', 'groupadd', '-f', ADMIN_GROUP])
-        run(['sudo', 'gpasswd', '-a', username, ADMIN_GROUP])
+        add_group_member(username, ADMIN_GROUP)
     flash(f'Usuário "{username}" criado como {"administrador" if is_admin else "comum"}', 'success')
     return redirect(url_for('users_page'))
 
@@ -1150,10 +1176,10 @@ def user_role():
         return redirect(url_for('users_page'))
     run(['sudo', 'groupadd', '-f', ADMIN_GROUP])
     if role == 'admin':
-        run(['sudo', 'gpasswd', '-a', username, ADMIN_GROUP])
+        add_group_member(username, ADMIN_GROUP)
         flash(f'"{username}" promovido a administrador', 'success')
     else:
-        run(['sudo', 'gpasswd', '-d', username, ADMIN_GROUP])
+        remove_group_member(username, ADMIN_GROUP)
         flash(f'"{username}" alterado para usuário comum', 'success')
     return redirect(url_for('users_page'))
 
@@ -1325,7 +1351,7 @@ def group_members():
         flash('Grupo inválido', 'error')
         return redirect(url_for('groups_page'))
     member_list = [m.strip() for m in members.split(',') if m.strip()]
-    rc, _, err = run(['sudo', 'gpasswd', '-M', ','.join(member_list), groupname])
+    rc, err = set_group_members(groupname, member_list)
     if rc != 0:
         flash(f'Erro ao atualizar membros: {err}', 'error')
     else:

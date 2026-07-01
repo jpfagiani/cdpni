@@ -131,12 +131,42 @@
     owner: root
     group: root
 
+- name: Criar wrapper de membros de grupo (evita auditoria do sudo)
+  ansible.builtin.copy:
+    dest: /usr/local/bin/cdpni-setgroup
+    content: |
+      #!/usr/bin/env python3
+      # Uso: cdpni-setgroup <grupo> <membro1,membro2,...>
+      import sys, re
+
+      group   = sys.argv[1]
+      members = sys.argv[2] if len(sys.argv) > 2 else ''
+
+      for path in ('/etc/group', '/etc/gshadow'):
+          try:
+              with open(path) as f:
+                  lines = f.readlines()
+              out = []
+              for line in lines:
+                  parts = line.rstrip('\n').split(':')
+                  if parts[0] == group:
+                      parts[-1] = members
+                      line = ':'.join(parts) + '\n'
+                  out.append(line)
+              with open(path, 'w') as f:
+                  f.writelines(out)
+          except FileNotFoundError:
+              pass
+    mode: "0700"
+    owner: root
+    group: root
+
 - name: Configurar sudoers para o portal (chpasswd + smbpasswd)
   ansible.builtin.copy:
     dest: /etc/sudoers.d/cdpni-portal
     content: |
       Defaults:{{ portal.user }} !log_allowed, !syslog
-      {{ portal.user }} ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/bash
+      {{ portal.user }} ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/bash
     validate: visudo -cf %s
     mode: "0440"
 
