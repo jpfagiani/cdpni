@@ -1681,19 +1681,23 @@ def backups_page():
         backups=get_backups(), backup_dir=BACKUP_DIR,
         session=session, banner=get_banner(), active='backups', is_admin=True)
 
-@app.route('/admin/backups/run', methods=['POST'])
+@app.route('/admin/backups/run', methods=['GET', 'POST'])
 @admin_required
 def backup_run():
-    script = app.config.get('BACKUP_SCRIPT', '/opt/scripts/backup.sh')
-    if os.path.exists(script):
-        subprocess.Popen(['sudo', 'bash', script])
-        flash('Backup iniciado em background', 'success')
-    else:
+    try:
+        script = app.config.get('BACKUP_SCRIPT', '/opt/scripts/backup.sh')
         os.makedirs(BACKUP_DIR, exist_ok=True)
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        out_file = os.path.join(BACKUP_DIR, f'shares_{timestamp}.tar.gz')
-        subprocess.Popen(['sudo', 'tar', '-czf', out_file, SAMBA_ROOT])
-        flash(f'Backup iniciado → {out_file}', 'success')
+        if os.path.exists(script):
+            subprocess.Popen(['sudo', 'bash', script])
+            flash('Backup iniciado em background', 'success')
+        else:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            out_file = os.path.join(BACKUP_DIR, f'shares_{timestamp}.tar.gz')
+            tar = '/usr/bin/tar' if os.path.exists('/usr/bin/tar') else '/bin/tar'
+            subprocess.Popen(['sudo', tar, '-czf', out_file, SAMBA_ROOT])
+            flash(f'Backup iniciado → {out_file}', 'success')
+    except Exception as e:
+        flash(f'Erro ao iniciar backup: {e}', 'error')
     return redirect(url_for('backups_page'))
 
 @app.route('/admin/backups/download/<filename>')
