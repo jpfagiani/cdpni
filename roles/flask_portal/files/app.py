@@ -1756,7 +1756,11 @@ def raid_smart():
     else:
         base_disk = re.sub(r'\d+$', '', disk)
         rc, out, err = run(['sudo', '/usr/local/bin/cdpni-smart', base_disk])
-        smart_output = out or err or 'Sem saída'
+        output = out or err or 'Sem saída'
+        if 'No Information Found' in output or 'Operation not permitted' in output:
+            smart_output = f'SMART não disponível para {base_disk}.\nA controladora ou camada de virtualização não expõe dados SMART diretamente.'
+        else:
+            smart_output = output
     return render_template_string(RAID_T,
         raid=get_mdstat(), disks=get_disk_usage(),
         smart_output=smart_output, smart_disk=smart_disk,
