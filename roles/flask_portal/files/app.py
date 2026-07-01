@@ -942,7 +942,11 @@ USERS_T = BASE_T.replace("__BODY__", """
         <span style="display:inline-flex;gap:3px;align-items:center">
           <button class="btn btn-xs" style="min-width:62px" onclick="openResetPass('{{ u.name }}')">Senha</button>
           <button class="btn btn-xs" style="min-width:82px" onclick="openPerms('{{ u.name }}')">Permissões</button>
-          {% if u.name != session.user %}
+          {% if u.name == session.user %}
+            <button class="btn btn-xs" style="min-width:106px" disabled title="Não é possível alterar seu próprio papel">↓ Tornar Comum</button>
+            <button class="btn btn-xs" style="min-width:62px" disabled title="Não é possível inativar seu próprio usuário">Inativar</button>
+            <button class="btn btn-xs btn-danger" style="min-width:56px" disabled title="Não é possível excluir seu próprio usuário">Excluir</button>
+          {% else %}
           {% if u.is_admin %}
             <button class="btn btn-xs btn-warn" style="min-width:106px" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
           {% else %}
