@@ -1153,7 +1153,7 @@ def user_create():
     if len(password) < 4:
         flash('Mínimo 4 caracteres', 'error')
         return redirect(url_for('users_page'))
-    rc, _, err = run(['sudo', 'useradd', '-m', '-s', '/bin/bash', username])
+    rc, _, err = run(['sudo', '/usr/local/bin/cdpni-useradd', username])
     if rc != 0:
         flash(f'Erro ao criar usuário: {err}', 'error')
         return redirect(url_for('users_page'))

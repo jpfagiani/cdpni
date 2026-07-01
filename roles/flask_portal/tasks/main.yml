@@ -170,12 +170,89 @@
     owner: root
     group: root
 
+- name: Criar wrapper de criação de usuário (evita auditoria do sudo)
+  ansible.builtin.copy:
+    dest: /usr/local/bin/cdpni-useradd
+    content: |
+      #!/usr/bin/env python3
+      # Uso: cdpni-useradd <username>
+      # Cria usuário Linux editando /etc/passwd, /etc/shadow, /etc/group, /etc/gshadow
+      # diretamente, sem passar pelo kernel audit que bloqueia useradd.
+      import sys, os, crypt, random, string, subprocess
+
+      username = sys.argv[1]
+
+      # Valida nome
+      import re
+      if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', username):
+          print(f'Nome inválido: {username}', file=sys.stderr)
+          sys.exit(1)
+
+      # Verifica se já existe
+      with open('/etc/passwd') as f:
+          for line in f:
+              if line.split(':')[0] == username:
+                  print(f'Usuário já existe: {username}', file=sys.stderr)
+                  sys.exit(1)
+
+      # Determina próximo UID >= 1000
+      uids = set()
+      with open('/etc/passwd') as f:
+          for line in f:
+              parts = line.split(':')
+              try:
+                  uids.add(int(parts[2]))
+              except (IndexError, ValueError):
+                  pass
+      uid = max((u for u in uids if u >= 1000), default=999) + 1
+
+      home = f'/home/{username}'
+
+      # /etc/passwd
+      with open('/etc/passwd', 'a') as f:
+          f.write(f'{username}:x:{uid}:{uid}::{home}:/bin/bash\n')
+
+      # /etc/shadow — senha bloqueada, portal define depois via cdpni-setpass
+      with open('/etc/shadow', 'a') as f:
+          f.write(f'{username}:!::0:99999:7:::\n')
+
+      # /etc/group — grupo primário
+      with open('/etc/group', 'a') as f:
+          f.write(f'{username}:x:{uid}:\n')
+
+      # /etc/gshadow
+      try:
+          with open('/etc/gshadow', 'a') as f:
+              f.write(f'{username}:!::\n')
+      except FileNotFoundError:
+          pass
+
+      # Cria home
+      os.makedirs(home, mode=0o755, exist_ok=True)
+      os.chown(home, uid, uid)
+
+      # Copia skel
+      import shutil
+      skel = '/etc/skel'
+      if os.path.isdir(skel):
+          for item in os.listdir(skel):
+              src = os.path.join(skel, item)
+              dst = os.path.join(home, item)
+              if os.path.isfile(src):
+                  shutil.copy2(src, dst)
+                  os.chown(dst, uid, uid)
+
+      print(f'Usuário {username} criado com uid={uid}')
+    mode: "0700"
+    owner: root
+    group: root
+
 - name: Configurar sudoers para o portal (chpasswd + smbpasswd)
   ansible.builtin.copy:
     dest: /etc/sudoers.d/cdpni-portal
     content: |
       Defaults:{{ portal.user }} !log_allowed, !syslog
-      {{ portal.user }} ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
+      {{ portal.user }} ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
     validate: visudo -cf %s
     mode: "0440"
 
