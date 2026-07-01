@@ -429,6 +429,10 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);background:#f
 .modal{background:#fff;border:0.5px solid var(--border);border-radius:10px;padding:1.25rem;width:460px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.1)}
 .modal h3{font-size:.9rem;font-weight:600;margin-bottom:1rem;padding-bottom:.5rem;border-bottom:0.5px solid var(--border);color:var(--text)}
 .modal-footer{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;padding-top:.5rem;border-top:0.5px solid var(--border)}
+.modal-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
+.modal-title h3{margin:0}
+.modal-close{background:none;border:none;font-size:1.2rem;line-height:1;color:var(--muted);cursor:pointer;padding:.1rem .3rem;border-radius:4px}
+.modal-close:hover{background:var(--border);color:var(--text)}
 .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
 .login-box{background:#fff;border:0.5px solid var(--border);border-radius:12px;width:320px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)}
 .login-header{background:#1c3557;border-bottom:none;padding:1.25rem;text-align:center}
@@ -524,6 +528,13 @@ __BODY__
   <span>Portal v2.0 · Python Flask</span>
 </div>
 {% endif %}
+<script>
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    document.querySelectorAll('.modal-bg.open').forEach(function(m){m.classList.remove('open');});
+  }
+});
+</script>
 </body></html>
 """
 
@@ -653,20 +664,20 @@ BROWSE_T = BASE_T.replace("__BODY__", """
     </tbody>
   </table>
 </div>
-<div class="modal-bg" id="mRename"><div class="modal"><h3>Renomear</h3>
+<div class="modal-bg" id="mRename"><div class="modal"><div class="modal-title"><h3>Renomear</h3><button type="button" class="modal-close" onclick="closeModal('mRename')">&times;</button></div>
   <form method="post" action="{{ url_for('rename', disk=disk, rel=rel) }}">
     <input type="hidden" name="old_name" id="oldName">
     <div class="form-group"><label>Novo nome</label><input type="text" name="new_name" id="newName"></div>
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mRename')">Cancelar</button>
     <button type="submit" class="btn btn-primary">Renomear</button></div>
   </form></div></div>
-<div class="modal-bg" id="mMkdir"><div class="modal"><h3>Nova Pasta</h3>
+<div class="modal-bg" id="mMkdir"><div class="modal"><div class="modal-title"><h3>Nova Pasta</h3><button type="button" class="modal-close" onclick="closeModal('mMkdir')">&times;</button></div>
   <form method="post" action="{{ url_for('mkdir', disk=disk, rel=rel) }}">
     <div class="form-group"><label>Nome</label><input type="text" name="name" autofocus></div>
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mMkdir')">Cancelar</button>
     <button type="submit" class="btn btn-primary">Criar</button></div>
   </form></div></div>
-<div class="modal-bg" id="mUpload"><div class="modal"><h3>Upload de Arquivos</h3>
+<div class="modal-bg" id="mUpload"><div class="modal"><div class="modal-title"><h3>Upload de Arquivos</h3><button type="button" class="modal-close" onclick="closeModal('mUpload')">&times;</button></div>
   <form method="post" action="{{ url_for('upload', disk=disk, rel=rel) }}" enctype="multipart/form-data">
     <div class="form-group"><label>Arquivos</label><input type="file" name="files" multiple></div>
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mUpload')">Cancelar</button>
@@ -967,7 +978,7 @@ USERS_T = BASE_T.replace("__BODY__", """
   </table>
 </div>
 
-<div class="modal-bg" id="mNewUser"><div class="modal"><h3>Novo Usuário</h3>
+<div class="modal-bg" id="mNewUser"><div class="modal"><div class="modal-title"><h3>Novo Usuário</h3><button type="button" class="modal-close" onclick="closeModal('mNewUser')">&times;</button></div>
   <form method="post" action="{{ url_for('user_create') }}">
     <div class="form-group"><label>Usuário (letras minúsculas, números, _ e -)</label>
       <input type="text" name="username" pattern="[a-z][a-z0-9_-]{0,31}" required autofocus></div>
@@ -986,7 +997,7 @@ USERS_T = BASE_T.replace("__BODY__", """
     </div>
   </form></div></div>
 
-<div class="modal-bg" id="mResetPass"><div class="modal"><h3>Redefinir Senha</h3>
+<div class="modal-bg" id="mResetPass"><div class="modal"><div class="modal-title"><h3>Redefinir Senha</h3><button type="button" class="modal-close" onclick="closeModal('mResetPass')">&times;</button></div>
   <form method="post" action="{{ url_for('user_passwd') }}">
     <input type="hidden" name="username" id="rpUsername">
     <div class="form-group"><label>Usuário</label><input type="text" id="rpUserLabel" readonly style="opacity:.6"></div>
@@ -1000,7 +1011,7 @@ USERS_T = BASE_T.replace("__BODY__", """
     </div>
   </form></div></div>
 
-<div class="modal-bg" id="mPerms"><div class="modal" style="min-width:420px"><h3>Permissões por Compartilhamento</h3>
+<div class="modal-bg" id="mPerms"><div class="modal" style="min-width:420px"><div class="modal-title"><h3>Permissões por Compartilhamento</h3><button type="button" class="modal-close" onclick="closeModal('mPerms')">&times;</button></div>
   <form method="post" action="{{ url_for('user_permissions') }}" id="fPerms">
     <input type="hidden" name="username" id="permsUsername">
     <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">Usuário: <strong id="permsUserLabel"></strong></p>
@@ -1252,14 +1263,14 @@ GROUPS_T = BASE_T.replace("__BODY__", """
     </tbody>
   </table>
 </div>
-<div class="modal-bg" id="mNewGroup"><div class="modal"><h3>Novo Grupo</h3>
+<div class="modal-bg" id="mNewGroup"><div class="modal"><div class="modal-title"><h3>Novo Grupo</h3><button type="button" class="modal-close" onclick="closeModal('mNewGroup')">&times;</button></div>
   <form method="post" action="{{ url_for('group_create') }}">
     <div class="form-group"><label>Nome do grupo</label>
       <input type="text" name="groupname" pattern="[a-z][a-z0-9_-]{0,31}" required autofocus></div>
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mNewGroup')">Cancelar</button>
     <button type="submit" class="btn btn-primary">Criar</button></div>
   </form></div></div>
-<div class="modal-bg" id="mEditGroup"><div class="modal"><h3>Editar Membros</h3>
+<div class="modal-bg" id="mEditGroup"><div class="modal"><div class="modal-title"><h3>Editar Membros</h3><button type="button" class="modal-close" onclick="closeModal('mEditGroup')">&times;</button></div>
   <form method="post" action="{{ url_for('group_members') }}">
     <input type="hidden" name="groupname" id="editGroupName">
     <div class="form-group"><label>Grupo</label><input type="text" id="editGroupLabel" readonly style="opacity:.6"></div>
@@ -1365,7 +1376,7 @@ SHARES_T = BASE_T.replace("__BODY__", """
     </tbody>
   </table>
 </div>
-<div class="modal-bg" id="mNewShare"><div class="modal"><h3>Novo Share</h3>
+<div class="modal-bg" id="mNewShare"><div class="modal"><div class="modal-title"><h3>Novo Share</h3><button type="button" class="modal-close" onclick="closeModal('mNewShare')">&times;</button></div>
   <form method="post" action="{{ url_for('share_create') }}">
     <div class="form-group"><label>Nome do share</label><input type="text" name="name" id="nsName" required autofocus oninput="autoPath()"></div>
     <div class="form-group">
@@ -1386,7 +1397,7 @@ SHARES_T = BASE_T.replace("__BODY__", """
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mNewShare')">Cancelar</button>
     <button type="submit" class="btn btn-primary">Criar</button></div>
   </form></div></div>
-<div class="modal-bg" id="mEditShare"><div class="modal"><h3>Editar Share</h3>
+<div class="modal-bg" id="mEditShare"><div class="modal"><div class="modal-title"><h3>Editar Share</h3><button type="button" class="modal-close" onclick="closeModal('mEditShare')">&times;</button></div>
   <form method="post" action="{{ url_for('share_edit') }}">
     <input type="hidden" name="original_name" id="esOrigName">
     <div class="form-group"><label>Nome</label><input type="text" name="name" id="esName" required></div>
