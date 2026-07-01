@@ -964,9 +964,9 @@ USERS_T = BASE_T.replace("__BODY__", """
             <button class="btn btn-xs btn-success" style="min-width:90px;text-align:center" onclick="confirmRole('{{ u.name }}','admin')">↑ Tornar Admin</button>
           {% endif %}
           {% if u.active %}
-            <button class="btn btn-xs btn-warn" style="min-width:58px;text-align:center" onclick="confirmToggle('{{ u.name }}','deactivate')">Inativar</button>
+            <button class="btn btn-xs btn-warn" style="min-width:58px;text-align:center;justify-content:center" onclick="confirmToggle('{{ u.name }}','deactivate')">Inativar</button>
           {% else %}
-            <button class="btn btn-xs btn-success" style="min-width:58px;text-align:center" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
+            <button class="btn btn-xs btn-success" style="min-width:58px;text-align:center;justify-content:center" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
           {% endif %}
           <button class="btn btn-xs btn-danger" style="min-width:48px;text-align:center" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
           {% endif %}
@@ -1363,12 +1363,12 @@ SHARES_T = BASE_T.replace("__BODY__", """
       <td><span class="badge {{ 'badge-warn' if s.read_only == 'yes' else 'badge-ok' }}">{{ 'Sim' if s.read_only == 'yes' else 'Não' }}</span></td>
       <td class="text-right nowrap">
         <button class="btn btn-xs" onclick="openEditShare(this)"
-          data-name="{{ s.name }}"
-          data-path="{{ s.path }}"
-          data-comment="{{ s.comment }}"
-          data-users="{{ s.valid_users }}"
-          data-ro="{{ s.read_only }}"
-          data-browse="{{ s.browseable }}">Editar</button>
+          data-name="{{ s.name|e }}"
+          data-path="{{ s.path|e }}"
+          data-comment="{{ s.comment|e }}"
+          data-users="{{ s.valid_users|e }}"
+          data-ro="{{ s.read_only|e }}"
+          data-browse="{{ s.browseable|e }}">Editar</button>
         <button class="btn btn-xs btn-danger" onclick="confirmDelShare('{{ s.name|e }}')">Excluir</button>
       </td>
     </tr>
@@ -1434,15 +1434,19 @@ document.addEventListener('DOMContentLoaded',function(){
   });
 });
 function openEditShare(btn){
-  var d=btn.dataset;
-  document.getElementById('esOrigName').value=d.name||'';
-  document.getElementById('esName').value=d.name||'';
-  document.getElementById('esPath').value=d.path||'';
-  document.getElementById('esComment').value=d.comment||'';
-  document.getElementById('esUsers').value=d.users||'';
-  document.getElementById('esRO').value=d.ro||'no';
-  document.getElementById('esBrowse').value=d.browse||'yes';
-  document.getElementById('mEditShare').classList.add('open');
+  try{
+    var d=btn.dataset;
+    document.getElementById('esOrigName').value=d.name||'';
+    document.getElementById('esName').value=d.name||'';
+    document.getElementById('esPath').value=d.path||'';
+    document.getElementById('esComment').value=d.comment||'';
+    document.getElementById('esUsers').value=d.users||'';
+    var ro=document.getElementById('esRO');
+    ro.value=(d.ro==='yes')?'yes':'no';
+    var br=document.getElementById('esBrowse');
+    br.value=(d.browse==='no')?'no':'yes';
+    document.getElementById('mEditShare').classList.add('open');
+  }catch(e){alert('Erro ao abrir edição: '+e.message);}
 }
 function confirmDelShare(n){if(!confirm('Remover share "'+n+'" do smb.conf?\n\nA pasta no disco NÃO será apagada.'))return;document.getElementById('delShareName').value=n;document.getElementById('fDelShare').submit();}
 </script>
