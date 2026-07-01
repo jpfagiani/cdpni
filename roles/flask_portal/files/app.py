@@ -1246,7 +1246,7 @@ def user_delete():
         flash('Não é possível excluir o próprio usuário logado', 'error')
         return redirect(url_for('users_page'))
     run(['sudo', 'smbpasswd', '-x', username])
-    rc, _, err = run(['sudo', 'userdel', '-r', username])
+    rc, _, err = run(['sudo', '/usr/local/bin/cdpni-userdel', username])
     if rc != 0 and 'does not exist' not in err:
         flash(f'Erro ao remover: {err}', 'error')
     else:
@@ -1402,7 +1402,7 @@ def group_delete():
     if not re.match(r'^[a-z][a-z0-9_-]{0,31}$', groupname):
         flash('Grupo inválido', 'error')
         return redirect(url_for('groups_page'))
-    rc, _, err = run(['sudo', 'groupdel', groupname])
+    rc, _, err = run(['sudo', '/usr/local/bin/cdpni-groupdel', groupname])
     if rc != 0:
         flash(f'Erro ao remover: {err}', 'error')
     else:

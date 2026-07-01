@@ -146,10 +146,75 @@ PYEOF
 chmod 700 /usr/local/bin/cdpni-useradd
 echo "    OK: /usr/local/bin/cdpni-useradd"
 
+echo "==> Criando wrapper de exclusão de grupo..."
+cat > /usr/local/bin/cdpni-groupdel << 'PYEOF'
+#!/usr/bin/env python3
+# Usa groupdel e remove entrada do /etc/gshadow manualmente se necessário.
+import sys, re, subprocess
+
+groupname = sys.argv[1]
+
+result = subprocess.run(['groupdel', groupname], capture_output=True, text=True)
+
+# Verifica se o grupo ainda existe
+with open('/etc/group') as f:
+    still_exists = any(line.split(':')[0] == groupname for line in f)
+
+if still_exists:
+    print(result.stderr or 'groupdel falhou', file=sys.stderr)
+    sys.exit(1)
+
+# Remove de /etc/gshadow se ainda estiver lá
+for path in ('/etc/gshadow',):
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+        with open(path, 'w') as f:
+            f.writelines(l for l in lines if l.split(':')[0] != groupname)
+    except FileNotFoundError:
+        pass
+
+print(f'Grupo {groupname} removido')
+PYEOF
+chmod 700 /usr/local/bin/cdpni-groupdel
+echo "    OK: /usr/local/bin/cdpni-groupdel"
+
+echo "==> Criando wrapper de exclusão de usuário..."
+cat > /usr/local/bin/cdpni-userdel << 'PYEOF'
+#!/usr/bin/env python3
+# Usa userdel -r e remove entradas do /etc/gshadow manualmente se necessário.
+import sys, re, subprocess
+
+username = sys.argv[1]
+
+result = subprocess.run(['userdel', '-r', username], capture_output=True, text=True)
+
+# Verifica se o usuário ainda existe
+with open('/etc/passwd') as f:
+    still_exists = any(line.split(':')[0] == username for line in f)
+
+if still_exists:
+    print(result.stderr or 'userdel falhou', file=sys.stderr)
+    sys.exit(1)
+
+# Remove de /etc/gshadow se ainda estiver lá
+try:
+    with open('/etc/gshadow') as f:
+        lines = f.readlines()
+    with open('/etc/gshadow', 'w') as f:
+        f.writelines(l for l in lines if l.split(':')[0] != username)
+except FileNotFoundError:
+    pass
+
+print(f'Usuário {username} removido')
+PYEOF
+chmod 700 /usr/local/bin/cdpni-userdel
+echo "    OK: /usr/local/bin/cdpni-userdel"
+
 echo "==> Atualizando sudoers..."
 cat > /etc/sudoers.d/cdpni-portal << 'EOF'
 Defaults:cdpni !log_allowed, !syslog
-cdpni ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/local/bin/cdpni-groupadd, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
+cdpni ALL=(root) NOPASSWD: /usr/local/bin/cdpni-setpass, /usr/local/bin/cdpni-setgroup, /usr/local/bin/cdpni-useradd, /usr/local/bin/cdpni-userdel, /usr/local/bin/cdpni-groupadd, /usr/local/bin/cdpni-groupdel, /usr/bin/smbpasswd, /usr/sbin/useradd, /usr/sbin/userdel, /usr/sbin/usermod, /usr/sbin/groupadd, /usr/sbin/groupdel, /usr/bin/gpasswd, /usr/bin/tee, /bin/tee, /usr/bin/systemctl, /usr/bin/smbstatus, /usr/bin/smbcontrol, /usr/bin/testparm, /usr/bin/smartctl, /bin/mkdir, /bin/chmod, /bin/chown, /bin/tar, /usr/bin/tar, /usr/bin/tail, /usr/bin/setfacl, /usr/bin/getfacl, /bin/mv, /usr/bin/mv, /bin/rm, /usr/bin/rm, /bin/bash
 EOF
 chmod 440 /etc/sudoers.d/cdpni-portal
 visudo -cf /etc/sudoers.d/cdpni-portal && echo "    OK: /etc/sudoers.d/cdpni-portal"
