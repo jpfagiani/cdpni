@@ -681,8 +681,6 @@ BROWSE_T = BASE_T.replace("__BODY__", """
       <td class="text-muted nowrap" style="font-family:var(--mono);font-size:.76rem">{{ '' if e.is_dir else e.size }}</td>
       <td class="text-right nowrap">
         {% if not e.is_dir %}<a href="{{ url_for('download', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}" class="btn btn-xs">Baixar</a>{% endif %}
-        <button class="btn btn-xs" onclick="openRename('{{ e.name|e }}')">Renomear</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelete('{{ e.name|e }}','{{ 'dir' if e.is_dir else 'file' }}')">Excluir</button>
       </td>
     </tr>
     {% else %}
@@ -691,13 +689,6 @@ BROWSE_T = BASE_T.replace("__BODY__", """
     </tbody>
   </table>
 </div>
-<div class="modal-bg" id="mRename"><div class="modal"><div class="modal-title"><h3>Renomear</h3><button type="button" class="modal-close" onclick="closeModal('mRename')">&times;</button></div>
-  <form method="post" action="{{ url_for('rename', disk=disk, rel=rel) }}">
-    <input type="hidden" name="old_name" id="oldName">
-    <div class="form-group"><label>Novo nome</label><input type="text" name="new_name" id="newName"></div>
-    <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mRename')">Cancelar</button>
-    <button type="submit" class="btn btn-primary">Renomear</button></div>
-  </form></div></div>
 <div class="modal-bg" id="mMkdir"><div class="modal"><div class="modal-title"><h3>Nova Pasta</h3><button type="button" class="modal-close" onclick="closeModal('mMkdir')">&times;</button></div>
   <form method="post" action="{{ url_for('mkdir', disk=disk, rel=rel) }}">
     <div class="form-group"><label>Nome</label><input type="text" name="name" autofocus></div>
@@ -710,19 +701,9 @@ BROWSE_T = BASE_T.replace("__BODY__", """
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mUpload')">Cancelar</button>
     <button type="submit" class="btn btn-primary">⬆ Enviar</button></div>
   </form></div></div>
-<form method="post" id="fDel" action="{{ url_for('delete', disk=disk, rel=rel) }}" style="display:none">
-  <input type="hidden" name="name" id="delName"><input type="hidden" name="is_dir" id="delIsDir">
-</form>
 <script>
-function openRename(n){document.getElementById('oldName').value=n;document.getElementById('newName').value=n;document.getElementById('mRename').classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-function confirmDelete(name,type){
-  if(!confirm('Excluir "'+name+'"?'))return;
-  document.getElementById('delName').value=name;
-  document.getElementById('delIsDir').value=type==='dir'?'1':'0';
-  document.getElementById('fDel').submit();
-}
 </script>
 """)
 
