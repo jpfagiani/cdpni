@@ -553,7 +553,7 @@ def login():
         req_user = user
         p = pam.pam()
         if p.authenticate(user, password, service='cdpni-portal'):
-            if user not in ADMIN_USERS:
+            if user not in ADMIN_USERS and user not in get_admin_group_members():
                 error = 'Acesso restrito a administradores'
             else:
                 import grp as grp_mod
