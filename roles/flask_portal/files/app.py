@@ -951,24 +951,24 @@ USERS_T = BASE_T.replace("__BODY__", """
       </td>
       <td class="text-right nowrap">
         <span style="display:inline-flex;gap:3px;align-items:center">
-          <button class="btn btn-xs" style="min-width:48px;text-align:center" onclick="openResetPass('{{ u.name }}')">Senha</button>
-          <button class="btn btn-xs" style="min-width:76px;text-align:center" onclick="openPerms('{{ u.name }}')">Permissões</button>
+          <button class="btn btn-xs" style="min-width:48px;text-align:center;justify-content:center" onclick="openResetPass('{{ u.name }}')">Senha</button>
+          <button class="btn btn-xs" style="min-width:76px;text-align:center;justify-content:center" onclick="openPerms('{{ u.name }}')">Permissões</button>
           {% if u.name == session.user %}
-            <button class="btn btn-xs" style="min-width:90px;text-align:center" disabled title="Não é possível alterar seu próprio papel">↓ Tornar Comum</button>
-            <button class="btn btn-xs" style="min-width:58px;text-align:center" disabled title="Não é possível inativar seu próprio usuário">Inativar</button>
-            <button class="btn btn-xs btn-danger" style="min-width:48px;text-align:center" disabled title="Não é possível excluir seu próprio usuário">Excluir</button>
+            <button class="btn btn-xs" style="min-width:90px;text-align:center;justify-content:center" disabled title="Não é possível alterar seu próprio papel">↓ Tornar Comum</button>
+            <button class="btn btn-xs" style="min-width:58px;text-align:center;justify-content:center" disabled title="Não é possível inativar seu próprio usuário">Inativar</button>
+            <button class="btn btn-xs btn-danger" style="min-width:48px;text-align:center;justify-content:center" disabled title="Não é possível excluir seu próprio usuário">Excluir</button>
           {% else %}
           {% if u.is_admin %}
-            <button class="btn btn-xs btn-warn" style="min-width:90px;text-align:center" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
+            <button class="btn btn-xs btn-warn" style="min-width:90px;text-align:center;justify-content:center" onclick="confirmRole('{{ u.name }}','comum')">↓ Tornar Comum</button>
           {% else %}
-            <button class="btn btn-xs btn-success" style="min-width:90px;text-align:center" onclick="confirmRole('{{ u.name }}','admin')">↑ Tornar Admin</button>
+            <button class="btn btn-xs btn-success" style="min-width:90px;text-align:center;justify-content:center" onclick="confirmRole('{{ u.name }}','admin')">↑ Tornar Admin</button>
           {% endif %}
           {% if u.active %}
             <button class="btn btn-xs btn-warn" style="min-width:58px;text-align:center;justify-content:center" onclick="confirmToggle('{{ u.name }}','deactivate')">Inativar</button>
           {% else %}
             <button class="btn btn-xs btn-success" style="min-width:58px;text-align:center;justify-content:center" onclick="confirmToggle('{{ u.name }}','activate')">Ativar</button>
           {% endif %}
-          <button class="btn btn-xs btn-danger" style="min-width:48px;text-align:center" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
+          <button class="btn btn-xs btn-danger" style="min-width:48px;text-align:center;justify-content:center" onclick="confirmDelUser('{{ u.name }}')">Excluir</button>
           {% endif %}
         </span>
       </td>
