@@ -338,7 +338,7 @@
           echo "Dispositivo inválido: $disk" >&2
           exit 1
       fi
-      exec /usr/sbin/smartctl -a -d sat "$disk"
+      exec /usr/sbin/smartctl -a -d sat -T permissive "$disk"
     mode: "0700"
     owner: root
     group: root
