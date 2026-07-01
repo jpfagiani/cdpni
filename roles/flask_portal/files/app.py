@@ -1302,12 +1302,22 @@ GROUPS_T = BASE_T.replace("__BODY__", """
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mNewGroup')">Cancelar</button>
     <button type="submit" class="btn btn-primary">Criar</button></div>
   </form></div></div>
-<div class="modal-bg" id="mEditGroup"><div class="modal"><div class="modal-title"><h3>Editar Membros</h3><button type="button" class="modal-close" onclick="closeModal('mEditGroup')">&times;</button></div>
-  <form method="post" action="{{ url_for('group_members') }}">
+<div class="modal-bg" id="mEditGroup"><div class="modal" style="max-width:480px"><div class="modal-title"><h3>Editar Membros — <span id="editGroupLabel"></span></h3><button type="button" class="modal-close" onclick="closeModal('mEditGroup')">&times;</button></div>
+  <form method="post" action="{{ url_for('group_members') }}" onsubmit="buildMembersList()">
     <input type="hidden" name="groupname" id="editGroupName">
-    <div class="form-group"><label>Grupo</label><input type="text" id="editGroupLabel" readonly style="opacity:.6"></div>
-    <div class="form-group"><label>Membros (separados por vírgula)</label>
-      <input type="text" name="members" id="editGroupMembers" placeholder="user1,user2"></div>
+    <input type="hidden" name="members"   id="editGroupMembers">
+    <div class="form-group" style="margin-bottom:.5rem">
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--muted);cursor:pointer">
+        <input type="checkbox" id="cbSelectAll" onchange="toggleAllMembers(this.checked)"> Selecionar todos
+      </label>
+    </div>
+    <div id="memberCheckboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem .75rem;max-height:320px;overflow-y:auto;padding:.25rem 0">
+      {% for u in all_users %}
+      <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" class="member-cb" value="{{ u.name }}"> {{ u.name }}
+      </label>
+      {% endfor %}
+    </div>
     <div class="modal-footer"><button type="button" class="btn" onclick="closeModal('mEditGroup')">Cancelar</button>
     <button type="submit" class="btn btn-primary">Salvar</button></div>
   </form></div></div>
@@ -1317,7 +1327,29 @@ GROUPS_T = BASE_T.replace("__BODY__", """
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
-function openEditGroup(name,members){document.getElementById('editGroupName').value=name;document.getElementById('editGroupLabel').value=name;document.getElementById('editGroupMembers').value=members;document.getElementById('mEditGroup').classList.add('open');}
+function openEditGroup(name,members){
+  var current=members?members.split(',').map(function(s){return s.trim();}):[];
+  document.getElementById('editGroupName').value=name;
+  document.getElementById('editGroupLabel').textContent=name;
+  document.querySelectorAll('.member-cb').forEach(function(cb){
+    cb.checked=current.indexOf(cb.value)!==-1;
+  });
+  syncSelectAll();
+  document.getElementById('mEditGroup').classList.add('open');
+}
+function toggleAllMembers(checked){
+  document.querySelectorAll('.member-cb').forEach(function(cb){cb.checked=checked;});
+}
+function syncSelectAll(){
+  var cbs=document.querySelectorAll('.member-cb');
+  var all=Array.from(cbs).every(function(cb){return cb.checked;});
+  document.getElementById('cbSelectAll').checked=all;
+}
+document.addEventListener('change',function(e){if(e.target&&e.target.classList.contains('member-cb'))syncSelectAll();});
+function buildMembersList(){
+  var checked=Array.from(document.querySelectorAll('.member-cb:checked')).map(function(cb){return cb.value;});
+  document.getElementById('editGroupMembers').value=checked.join(',');
+}
 function confirmDelGroup(g){if(!confirm('Excluir grupo "'+g+'"?'))return;document.getElementById('delGroupName').value=g;document.getElementById('fDelGroup').submit();}
 </script>
 """)
@@ -1326,6 +1358,7 @@ function confirmDelGroup(g){if(!confirm('Excluir grupo "'+g+'"?'))return;documen
 @admin_required
 def groups_page():
     return render_template_string(GROUPS_T, groups=get_system_groups(),
+        all_users=get_system_users(),
         session=session, banner=get_banner(), active='groups', is_admin=True)
 
 @app.route('/admin/groups/create', methods=['POST'])
