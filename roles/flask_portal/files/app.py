@@ -350,31 +350,27 @@ def get_samba_connections() -> list[dict]:
 def get_samba_logs(lines: int = 100) -> str:
     log_dir = '/var/log/samba'
     result = []
-    skip_prefixes = ('log.rpcd_', 'log.samba-', 'log.wb-', 'log.winbindd-', 'log.cores')
+    skip_prefixes = ('log.rpcd_', 'log.samba-', 'log.wb-', 'log.winbindd-')
     priority = ['log.smbd', 'log.nmbd', 'log.winbindd', 'log.']
     try:
-        # Lista arquivos via sudo find (cdpni nao tem acesso ao diretorio)
-        rc, out, _ = run(['sudo', 'find', log_dir, '-maxdepth', '1',
-                          '-name', 'log.*', '-type', 'f', '-size', '+0c'])
-        if rc != 0:
-            return '(sem logs disponíveis)'
-        all_files = sorted(out.splitlines())
+        all_names = sorted(os.listdir(log_dir))
         seen = set()
         candidates = []
-        # Prioridade: arquivos conhecidos primeiro
         for name in priority:
             p = os.path.join(log_dir, name)
-            if p in all_files:
+            if os.path.isfile(p) and os.path.getsize(p) > 0:
                 candidates.append(p)
-                seen.add(p)
-        # Restante: logs por máquina/IP
-        for p in all_files:
-            if p in seen:
+                seen.add(name)
+        for name in all_names:
+            if name in seen:
                 continue
-            fname = os.path.basename(p)
-            if any(fname.startswith(s) for s in skip_prefixes):
+            if any(name.startswith(s) for s in skip_prefixes):
                 continue
-            candidates.append(p)
+            if not name.startswith('log.'):
+                continue
+            p = os.path.join(log_dir, name)
+            if os.path.isfile(p) and os.path.getsize(p) > 0:
+                candidates.append(p)
         for p in candidates:
             rc, out, _ = run(['sudo', 'tail', f'-n{lines}', p])
             if out:
