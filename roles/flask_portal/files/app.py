@@ -34,7 +34,7 @@ def safe_path(disk: str, rel: str = '') -> Path:
 
 def user_disks() -> list[str]:
     user = session.get('user', '')
-    if user in ADMIN_USERS:
+    if is_admin_user(user):
         try:
             return sorted(d.name for d in Path(SAMBA_ROOT).iterdir() if d.is_dir())
         except Exception:
@@ -56,12 +56,15 @@ def login_required(f):
         return f(*a, **kw)
     return wrapper
 
+def is_admin_user(username: str) -> bool:
+    return username in ADMIN_USERS or username in get_admin_group_members()
+
 def admin_required(f):
     @wraps(f)
     def wrapper(*a, **kw):
         if not session.get('logged_in'):
             return redirect(url_for('login'))
-        if session.get('user') not in ADMIN_USERS:
+        if not is_admin_user(session.get('user', '')):
             abort(403)
         return f(*a, **kw)
     return wrapper
@@ -602,7 +605,7 @@ def index():
     disks = user_disks()
     notice_file = os.path.join(PORTAL_DIR, 'notice.html')
     notice = open(notice_file).read() if os.path.exists(notice_file) else ''
-    is_admin = session.get('user') in ADMIN_USERS
+    is_admin = is_admin_user(session.get('user', ''))
     return render_template_string(INDEX_T, disks=disks, notice=notice,
         session=session, banner=get_banner(), active='files', is_admin=is_admin)
 
@@ -704,7 +707,7 @@ def browse(disk, rel):
                 pass
     except PermissionError:
         abort(403)
-    is_admin = session.get('user') in ADMIN_USERS
+    is_admin = is_admin_user(session.get('user', ''))
     return render_template_string(BROWSE_T, disk=disk, rel=rel, entries=entries,
         session=session, banner=get_banner(), active='files', is_admin=is_admin)
 
@@ -1749,7 +1752,7 @@ CHPASS_T = BASE_T.replace("__BODY__", """
 @app.route('/change-pass', methods=['GET'])
 @login_required
 def change_pass_page():
-    is_admin = session.get('user') in ADMIN_USERS
+    is_admin = is_admin_user(session.get('user', ''))
     return render_template_string(CHPASS_T,
         session=session, banner=get_banner(), active='', is_admin=is_admin)
 
