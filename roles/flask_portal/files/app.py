@@ -1367,8 +1367,12 @@ SHARES_T = BASE_T.replace("__BODY__", """
 </div>
 <div class="modal-bg" id="mNewShare"><div class="modal"><h3>Novo Share</h3>
   <form method="post" action="{{ url_for('share_create') }}">
-    <div class="form-group"><label>Nome do share</label><input type="text" name="name" required autofocus></div>
-    <div class="form-group"><label>Caminho (path)</label><input type="text" name="path" placeholder="/mnt/raid/shares/nome" required></div>
+    <div class="form-group"><label>Nome do share</label><input type="text" name="name" id="nsName" required autofocus oninput="autoPath()"></div>
+    <div class="form-group">
+      <label>Caminho (path)</label>
+      <input type="text" name="path" id="nsPath" placeholder="/mnt/raid/shares/nome" required>
+      <small class="text-muted">Preenchido automaticamente — edite se necessário</small>
+    </div>
     <div class="form-group"><label>Comentário</label><input type="text" name="comment"></div>
     <div class="form-group"><label>Usuários/grupos válidos (ex: user1 @grupo1)</label><input type="text" name="valid_users"></div>
     <div class="form-row">
@@ -1404,6 +1408,20 @@ SHARES_T = BASE_T.replace("__BODY__", """
 <script>
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 document.querySelectorAll('.modal-bg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
+var _pathEdited=false;
+function autoPath(){
+  if(_pathEdited) return;
+  var name=document.getElementById('nsName').value.trim();
+  document.getElementById('nsPath').value=name ? '/mnt/raid/shares/'+name : '';
+}
+document.addEventListener('DOMContentLoaded',function(){
+  var p=document.getElementById('nsPath');
+  if(p) p.addEventListener('input',function(){_pathEdited=this.value!=='';});
+  var modal=document.getElementById('mNewShare');
+  if(modal) modal.addEventListener('click',function(e){
+    if(e.target===this){_pathEdited=false;document.getElementById('nsName').value='';document.getElementById('nsPath').value='';}
+  });
+});
 function openEditShare(btn){
   var d=btn.dataset;
   document.getElementById('esOrigName').value=d.name||'';
