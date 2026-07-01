@@ -24,13 +24,19 @@ os.makedirs(BANNER_DIR, exist_ok=True)
 def safe_path(disk: str, rel: str = '') -> Path:
     base = (Path(SAMBA_ROOT) / secure_filename(disk)).resolve()
     if rel:
-        parts = [secure_filename(p) for p in Path(rel).parts if p not in ('', '.', '..')]
-        target = base.joinpath(*parts).resolve() if parts else base
+        target = (base / rel).resolve()
     else:
         target = base
     if not str(target).startswith(str(base) + os.sep) and target != base:
         abort(403)
     return target
+
+def safe_name(name: str) -> str:
+    """Valida nome de arquivo sem manchar espaços/acentos; bloqueia traversal."""
+    name = name.strip()
+    if not name or '/' in name or '\\' in name or name in ('..', '.'):
+        return ''
+    return name
 
 def user_disks() -> list[str]:
     user = session.get('user', '')
@@ -653,9 +659,9 @@ BROWSE_T = BASE_T.replace("__BODY__", """
       <td class="text-muted">{{ 'Pasta' if e.is_dir else e.ext }}</td>
       <td class="text-muted nowrap" style="font-family:var(--mono);font-size:.76rem">{{ '' if e.is_dir else e.size }}</td>
       <td class="text-right nowrap">
-        {% if not e.is_dir %}<a href="{{ url_for('download', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}" class="btn btn-xs">⬇</a>{% endif %}
-        <button class="btn btn-xs" onclick="openRename('{{ e.name|e }}')">✏</button>
-        <button class="btn btn-xs btn-danger" onclick="confirmDelete('{{ e.name|e }}','{{ 'dir' if e.is_dir else 'file' }}')">🗑</button>
+        {% if not e.is_dir %}<a href="{{ url_for('download', disk=disk, rel=(rel+'/' if rel else '')+e.name) }}" class="btn btn-xs">Baixar</a>{% endif %}
+        <button class="btn btn-xs" onclick="openRename('{{ e.name|e }}')">Renomear</button>
+        <button class="btn btn-xs btn-danger" onclick="confirmDelete('{{ e.name|e }}','{{ 'dir' if e.is_dir else 'file' }}')">Excluir</button>
       </td>
     </tr>
     {% else %}
@@ -781,8 +787,8 @@ def mkdir(disk, rel):
 @login_required
 def rename(disk, rel):
     parent   = safe_path(disk, rel)
-    old_name = secure_filename(request.form.get('old_name', ''))
-    new_name = secure_filename(request.form.get('new_name', ''))
+    old_name = safe_name(request.form.get('old_name', ''))
+    new_name = safe_name(request.form.get('new_name', ''))
     if not old_name or not new_name or old_name == new_name:
         flash('Nome inválido', 'error')
         return redirect(url_for('browse', disk=disk, rel=rel))
@@ -802,7 +808,7 @@ def rename(disk, rel):
 @login_required
 def delete(disk, rel):
     parent = safe_path(disk, rel)
-    name   = secure_filename(request.form.get('name', ''))
+    name   = safe_name(request.form.get('name', ''))
     is_dir = request.form.get('is_dir') == '1'
     if not name:
         flash('Nome inválido', 'error')
