@@ -1729,12 +1729,31 @@ def raid_smart():
     disk = request.form.get('disk', '').strip()
     smart_output = ''
     smart_disk = disk
-    if disk and re.match(r'^/dev/[\w]+$', disk):
+    if not disk or not re.match(r'^/dev/[\w]+$', disk):
+        smart_output = 'Dispositivo inválido'
+    elif re.match(r'^/dev/md\d*$', disk):
+        # Dispositivo RAID virtual — executa SMART em cada disco membro
+        members = []
+        try:
+            with open('/proc/mdstat') as f:
+                for line in f:
+                    if line.startswith('md') and 'active' in line:
+                        members = re.findall(r'(sd[a-z]+)\[\d+\]', line)
+        except Exception:
+            pass
+        if not members:
+            smart_output = 'Não foi possível identificar os discos membros do RAID.'
+        else:
+            parts = []
+            for m in members:
+                dev = f'/dev/{m}'
+                rc, out, err = run(['sudo', '/usr/local/bin/cdpni-smart', dev])
+                parts.append(f'=== {dev} ===\n{out or err or "Sem saída"}')
+            smart_output = '\n\n'.join(parts)
+    else:
         base_disk = re.sub(r'\d+$', '', disk)
         rc, out, err = run(['sudo', '/usr/local/bin/cdpni-smart', base_disk])
         smart_output = out or err or 'Sem saída'
-    else:
-        smart_output = 'Dispositivo inválido'
     return render_template_string(RAID_T,
         raid=get_mdstat(), disks=get_disk_usage(),
         smart_output=smart_output, smart_disk=smart_disk,
